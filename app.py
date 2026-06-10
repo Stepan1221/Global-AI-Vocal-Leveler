@@ -6,8 +6,6 @@ from scipy.ndimage import gaussian_filter1d
 import matplotlib.pyplot as plt
 import os
 import pandas as pd
-import mido
-from mido import MidiFile, MidiTrack, Message
 
 def calculate_metrics(y, sr):
     # Helper function to calculate audio industry metrics in dB
@@ -25,6 +23,41 @@ def calculate_metrics(y, sr):
         "Dynamic Range": f"{dynamic_range:.1f} dB",
         "Peak (Maximum)": f"{peak_db:.1f} dB"
     }
+
+def generate_protools_text_automation(gain_curve, sr, hop_length, track_name="AI_Vocal_Fix"):
+    """
+    Generates a plain text file structured exactly like a Pro Tools Track Text Export.
+    Pro Tools can natively import this via 'Import Session Data' directly onto an audio track.
+    """
+    time_per_frame = hop_length / sr
+    lines = []
+    
+    # Pro Tools official header markers
+    lines.append(f"TRACK NAME:\t{track_name}")
+    lines.append("COMMENTS:\tAI Vocal Leveler Generated Automation")
+    lines.append("TIME CODE FORMAT:\t25.00")
+    lines.append("\nVOLUME AUTOMATION PLAYLIST:")
+    
+    for i, g_val in enumerate(gain_curve):
+        time_in_seconds = i * time_per_frame
+        
+        # Safe map gain factor to Pro Tools dB fader scale (approx -60 dB to +6 dB)
+        if g_val < 0.45:
+            db_val = -60.0
+        else:
+            db_val = 20 * np.log10(g_val)
+            if db_val > 6.0: 
+                db_val = 6.0
+                
+        # Format time to standard Minutes:Seconds.Milliseconds string
+        mins = int(time_in_seconds // 60)
+        secs = int(time_in_seconds % 60)
+        ms = int((time_in_seconds - int(time_in_seconds)) * 1000)
+        
+        time_str = f"{mins:02d}:{secs:02d}.{ms:03d}"
+        lines.append(f"\t{time_str}\t{db_val:.2f}")
+        
+    return "\n".join(lines)
 
 def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensity=70, output_trim=1.2, auto_mode=True):
     # 1. Load Audio Files
@@ -125,10 +158,10 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
         gain_curve
     )
     
-    # A. Process Target Audio (Scenario A: Ideal)
+    # A. Process Target Audio
     y_modulated = y_target * gain_samples * final_global_gain
     
-    # No-Gate Safety Logic for Digital Silence
+    # Safety Logic for Silence
     silence_threshold = 0.005
     rms_ref_samples = np.interp(
         np.arange(len(y_ref)),
@@ -141,28 +174,8 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
     if max_val > 0.99:
         y_modulated = y_modulated / max_val * 0.99
         
-    # B. Generate MIDI Automation File (Scenario B: Backup / Problem Fix)
-    mid = MidiFile()
-    track = MidiTrack()
-    mid.tracks.append(track)
-    
-    time_per_frame_sec = hop_length / sr
-    ticks_per_beat = 480
-    bpm = 120  
-    ticks_per_sec = (ticks_per_beat * bpm) / 60
-    ticks_per_frame = int(time_per_frame_sec * ticks_per_sec)
-    
-    last_cc_val = -1
-    for i, g_val in enumerate(gain_curve):
-        cc_val = int(np.clip((g_val - 0.45) / (1.65 - 0.45) * 127, 0, 127))
-        
-        if cc_val != last_cc_val:
-            # CC #7 is the worldwide MIDI standard for Volume Automation
-            track.append(Message('control_change', control=7, value=cc_val, time=ticks_per_frame if i > 0 else 0))
-            last_cc_val = cc_val
-        else:
-            if i > 0 and len(track) > 0:
-                track[-1].time += ticks_per_frame
+    # B. Generate Pro Tools Text Automation Data
+    pt_text_data = generate_protools_text_automation(gain_curve, sr, hop_length)
 
     times = librosa.times_like(rms_ref_smooth, sr=sr, hop_length=hop_length)
     
@@ -170,7 +183,7 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
     metrics_target = calculate_metrics(y_target, sr)
     metrics_out = calculate_metrics(y_modulated, sr)
     
-    return y_modulated, mid, sr, times, rms_ref_smooth, rms_target_smooth, gain_curve, fader_speed, intensity, metrics_ref, metrics_target, metrics_out
+    return y_modulated, pt_text_data, sr, times, rms_ref_smooth, rms_target_smooth, gain_curve, fader_speed, intensity, metrics_ref, metrics_target, metrics_out
 
 # --- WEB INTERFACE ---
 st.set_page_config(page_title="AI Vocal Leveler", page_icon="🎤", layout="centered")
@@ -206,15 +219,16 @@ if ref_upload and target_upload:
     if st.button("⚡ Process and Match Volumes", type="primary"):
         with st.spinner("Analyzing human factor dynamics and processing audio..."):
             try:
-                output_audio, midi_data, sample_rate, times, rms_ref, rms_target, gain_curve, final_speed, final_intensity, m_ref, m_tgt, m_out = analyze_and_match_vocal(
+                output_audio, pt_text_data, sample_rate, times, rms_ref, rms_target, gain_curve, final_speed, final_intensity, m_ref, m_tgt, m_out = analyze_and_match_vocal(
                     ref_upload, target_upload, fader_speed, intensity, output_trim, auto_mode
                 )
                 
                 output_fn = "leveled_target_vocal.wav"
-                midi_fn = "vocal_volume_automation.mid"
+                text_fn = "protools_volume_automation.txt"
                 
                 sf.write(output_fn, output_audio, sample_rate)
-                midi_data.save(midi_fn)
+                with open(text_fn, "w", encoding="utf-8") as f:
+                    f.write(pt_text_data)
                 
                 st.success("✓ Audio successfully leveled!")
                 
@@ -257,39 +271,11 @@ if ref_upload and target_upload:
                 plt.tight_layout()
                 st.pyplot(fig)
                 
-                # DOWNLOAD SECTION (Scenario A & Scenario B)
+                # DOWNLOAD SECTION
                 st.write("---")
                 st.subheader("💾 Download Options")
                 
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    st.write("🟢 **Scenario A: Ideal Output**")
-                    st.caption("Pre-rendered and fully leveled WAV file ready for the mix.")
-                    st.audio(output_fn, format="audio/wav")
-                    with open(output_fn, "rb") as file:
-                        st.download_button(
-                            label="🚀 Download Leveled Vocal WAV",
-                            data=file,
-                            file_name="leveled_target_vocal.wav",
-                            mime="audio/wav",
-                            use_container_width=True
-                        )
-                        
-                with col2:
-                    st.write("🟡 **Scenario B: Troubleshooting / Backup**")
-                    st.caption("Pure automation curve data. Drag & Drop this MIDI file onto your unedited vocal track volume lane in Pro Tools.")
-                    with open(midi_fn, "rb") as file:
-                        st.download_button(
-                            label="🎛️ Download MIDI Automation Curve",
-                            data=file,
-                            file_name="vocal_volume_automation.mid",
-                            mime="audio/midi",
-                            use_container_width=True
-                        )
-                
-                os.remove(output_fn)
-                os.remove(midi_fn)
-                
-            except Exception as e:
-                st.error(f"An error occurred during processing: {e}")
+                    st.write("
