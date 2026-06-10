@@ -143,17 +143,17 @@ def analyze_and_match_vocal(ref_file, target_file, intensity=70, onset_sensitivi
         smoothed_micro_db[i] = smoothed_micro_db[i-1] + alpha * diff
 
     # Combined target: phrase flow plus micro-syllable correction and onset sensitivity
-    macro_weight = np.clip(0.65 - 0.35 * onset_norm * onset_gain, 0.25, 0.65)
+    macro_weight = np.clip(0.75 - 0.25 * onset_norm * onset_gain, 0.35, 0.75)
     micro_weight = 1.0 - macro_weight
     pure_gain_db = (macro_weight * macro_diff_db) + (micro_weight * smoothed_micro_db)
-    pure_gain_db = np.clip(pure_gain_db, -7.0, 4.5)
+    pure_gain_db = np.clip(pure_gain_db, -6.0, 4.0)
 
-    # Scale correction by intensity in dB space
+    # Scale correction by intensity in dB space, but keep core phrase shape natural
     gain_db = intensity_factor * pure_gain_db
     gain_curve = 10 ** (gain_db / 20.0)
 
     # Light final smoothing; preserve transient detail while avoiding pumping
-    final_sigma = max(2.0, final_smooth_sigma * (1.0 - onset_gain * 0.4))
+    final_sigma = max(2.4, final_smooth_sigma * (1.0 - onset_gain * 0.15))
     gain_curve = gaussian_filter1d(gain_curve, sigma=final_sigma)
     
     gain_samples = np.interp(
@@ -228,7 +228,7 @@ st.subheader("🎛️ Control Panel")
 if "smoothing_mode" not in st.session_state:
     st.session_state.smoothing_mode = "Balanced"
 if "intensity" not in st.session_state:
-    st.session_state.intensity = 70
+    st.session_state.intensity = 55
 if "onset_sensitivity" not in st.session_state:
     st.session_state.onset_sensitivity = 0.5
 
@@ -265,7 +265,7 @@ with st.expander("Advanced settings (optional)"):
 
     def reset_defaults():
         st.session_state["smoothing_mode"] = "Balanced"
-        st.session_state["intensity"] = 70
+        st.session_state["intensity"] = 55
         st.session_state["onset_sensitivity"] = 0.5
 
     st.button("Reset defaults", key="reset_defaults_button", on_click=reset_defaults)
