@@ -50,7 +50,7 @@ def calculate_r128_metrics(y, sr):
         "True Peak": f"{true_peak_db:.1f} dBTP"
     }
 
-def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensity=70, onset_sensitivity=0.5, smoothing_mode="Balanced", output_trim=1.2, auto_mode=True):
+def analyze_and_match_vocal(ref_file, target_file, intensity=70, onset_sensitivity=0.5, smoothing_mode="Balanced"):
     # 1. Load Audio Files
     y_ref, sr = librosa.load(ref_file, sr=None)
     y_target, _ = librosa.load(target_file, sr=sr)
@@ -93,18 +93,7 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
         gate_sigma = 16
         mode_label = "Balanced"
 
-    if auto_mode:
-        fader_speed = f"Auto {mode_label}"
-    else:
-        if fader_speed == "Fast (Sharp)":
-            fast_sigma = max(8.0, fast_sigma - 4.0)
-            phrase_sigma = max(55.0, phrase_sigma - 30.0)
-            gate_sigma = max(10, gate_sigma - 4)
-        elif fader_speed == "Slow (Loose)":
-            fast_sigma = min(30.0, fast_sigma + 10.0)
-            phrase_sigma = min(160.0, phrase_sigma + 40.0)
-            gate_sigma = min(26, gate_sigma + 6)
-        fader_speed = f"Manual {mode_label}"
+    fader_speed = f"Auto {mode_label}"
 
     # Calculate phrase level trends and transient syllable spikes
     rms_ref_macro = gaussian_filter1d(rms_ref, sigma=phrase_sigma)
@@ -206,8 +195,7 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
     # Global Energy Trim Match to center the mix perfectly
     rms_global_ref = np.sqrt(np.mean(y_ref**2))
     rms_global_out = np.sqrt(np.mean(y_modulated**2))
-    fine_tune_factor = 10**(output_trim / 20)
-    global_rebalance = (rms_global_ref / (rms_global_out + 1e-6)) * fine_tune_factor
+    global_rebalance = rms_global_ref / (rms_global_out + 1e-6)
     
     y_modulated = y_modulated * global_rebalance
     
@@ -237,36 +225,21 @@ target_upload = st.file_uploader("2. Upload Localized Vocal (e.g., Target Langua
 st.write("---")
 st.subheader("🎛️ Control Panel")
 
-auto_mode = st.toggle("🧠 Smart Auto-Analyze (Recommended)", value=True)
+if "smoothing_mode" not in st.session_state:
+    st.session_state.smoothing_mode = "Balanced"
+if "intensity" not in st.session_state:
+    st.session_state.intensity = 70
+if "onset_sensitivity" not in st.session_state:
+    st.session_state.onset_sensitivity = 0.5
 
-if auto_mode:
-    st.info("💡 **Smart Auto-Mode is ACTIVE.** Recommended settings are applied automatically.")
-    st.caption("Auto mode is designed to work without extra tuning. Advanced options are below.")
-    fader_speed = "Auto"
-else:
-    st.warning("🎚️ **Manual Control Mode Active.**")
-    col1, col2 = st.columns(2)
-    with col1:
-        fader_speed = st.select_slider(
-            "Fader Response Window",
-            options=["Slow (Loose)", "Normal (Medium)", "Fast (Sharp)"],
-            value="Normal (Medium)"
-        )
-    with col2:
-        output_trim = st.slider(
-            "Output Trim (Fine-tune Gain in dB)",
-            min_value=-3.0,
-            max_value=3.0,
-            value=0.5,
-            step=0.1,
-            help="Jemná úprava celkové úrovně výstupu."
-        )
+st.info("💡 **Smart Auto Analyzer is always active.** The app works automatically in the background.")
+st.caption("Use advanced options only if you want to change behavior manually.")
 
 with st.expander("Advanced settings (optional)"):
     smoothing_mode = st.selectbox(
         "Smoothing Mode",
         options=["Smooth", "Balanced", "Sharp"],
-        index=1,
+        key="smoothing_mode",
         help="Smooth = gentler response, Sharp = faster adaptation, Balanced = natural middle ground."
     )
 
@@ -274,7 +247,7 @@ with st.expander("Advanced settings (optional)"):
         "Match Intensity (Aggressiveness %)",
         min_value=10,
         max_value=120,
-        value=70,
+        key="intensity",
         step=5,
         help="Left = more natural, right = stronger matching."
     )
@@ -284,20 +257,16 @@ with st.expander("Advanced settings (optional)"):
         "Onset Sensitivity",
         min_value=0.0,
         max_value=1.0,
-        value=0.5,
+        key="onset_sensitivity",
         step=0.05,
         help="Left = slower response, right = faster reaction to short syllables."
     )
     st.caption("⬅️ Slower, less sensitive — Faster, more adaptive ➡️")
 
-    output_trim = st.slider(
-        "Output Trim (Fine-tune Gain in dB)",
-        min_value=-3.0,
-        max_value=3.0,
-        value=0.5,
-        step=0.1,
-        help="Volitelné jemné doladění celkové úrovně."
-    )
+    if st.button("Reset defaults"):
+        st.session_state.smoothing_mode = "Balanced"
+        st.session_state.intensity = 70
+        st.session_state.onset_sensitivity = 0.5
 
 if ref_upload and target_upload:
     if st.button("⚡ Process and Match Volumes", type="primary"):
@@ -306,12 +275,9 @@ if ref_upload and target_upload:
                 output_audio, sample_rate, times, rms_ref, rms_target, gain_curve, final_speed, final_intensity, m_ref, m_tgt, m_out = analyze_and_match_vocal(
                     ref_upload,
                     target_upload,
-                    fader_speed,
                     intensity,
                     onset_sensitivity,
-                    smoothing_mode,
-                    output_trim,
-                    auto_mode
+                    smoothing_mode
                 )
                 
                 output_fn = "leveled_target_vocal.wav"
@@ -319,8 +285,7 @@ if ref_upload and target_upload:
                 
                 st.success("✓ Audio successfully leveled!")
                 
-                if auto_mode:
-                    st.code(f"AI Song Analysis Completed:\n -> Mode selected: {final_speed}\n -> Applied match intensity: {final_intensity}%")
+                st.code(f"AI Song Analysis Completed:\n -> Mode selected: {final_speed}\n -> Applied match intensity: {final_intensity}%")
                 
                 # REPOSITIONED AND RENAMED PROFESSIONAL R128 TABLE
                 st.subheader("📊 Loudness Analysis (EBU R128 Standard)")
