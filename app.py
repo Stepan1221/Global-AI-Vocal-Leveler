@@ -239,35 +239,9 @@ st.subheader("🎛️ Control Panel")
 
 auto_mode = st.toggle("🧠 Smart Auto-Analyze (Recommended)", value=True)
 
-smoothing_mode = st.selectbox(
-    "Smoothing Mode",
-    options=["Smooth", "Balanced", "Sharp"],
-    index=1,
-    help="Smooth = gentler reaction, Sharp = more reactive to syllables, Balanced = natural compromise."
-)
-
-intensity = st.slider(
-    "Match Intensity (Aggressiveness %)",
-    min_value=10,
-    max_value=120,
-    value=70,
-    step=5,
-    help="Left = more natural, Right = more aggressive."
-)
-st.caption("⬅️ Méně korekce / Plynulejší zvuk — Více korekce ➡️")
-
-onset_sensitivity = st.slider(
-    "Onset Sensitivity",
-    min_value=0.0,
-    max_value=1.0,
-    value=0.5,
-    step=0.05,
-    help="Left = pomalejší reakce, Right = rychlejší nástupy."
-)
-st.caption("⬅️ Pomalejší, méně citlivé — Rychlejší, více přizpůsobivé ➡️")
-
 if auto_mode:
-    st.info("💡 **Smart Auto-Mode is ACTIVE.** Automatic syllable-level matching with adjustable reaction settings.")
+    st.info("💡 **Smart Auto-Mode is ACTIVE.** Recommended settings are applied automatically.")
+    st.caption("Auto mode je navrženo tak, aby fungovalo bez nutného dolaďování. Pokročilé volby jsou níže.")
     fader_speed = "Auto"
 else:
     st.warning("🎚️ **Manual Control Mode Active.**")
@@ -284,16 +258,45 @@ else:
             min_value=-3.0,
             max_value=3.0,
             value=0.5,
-            step=0.1
+            step=0.1,
+            help="Jemná úprava celkové úrovně výstupu."
         )
 
-if auto_mode:
+with st.expander("Pokročilé nastavení (volitelné)"):
+    smoothing_mode = st.selectbox(
+        "Smoothing Mode",
+        options=["Smooth", "Balanced", "Sharp"],
+        index=1,
+        help="Smooth = jemnější reakce, Sharp = rychlejší adaptace, Balanced = přirozená střední cesta."
+    )
+
+    intensity = st.slider(
+        "Match Intensity (Aggressiveness %)",
+        min_value=10,
+        max_value=120,
+        value=70,
+        step=5,
+        help="Levá strana = přirozenější, pravá strana = více korekce."
+    )
+    st.caption("⬅️ Méně korekce / Plynulejší zvuk — Více korekce ➡️")
+
+    onset_sensitivity = st.slider(
+        "Onset Sensitivity",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.5,
+        step=0.05,
+        help="Levá strana = pomalejší reakce, pravá strana = rychlejší reakce na krátké slabiky."
+    )
+    st.caption("⬅️ Pomalejší, méně citlivé — Rychlejší, více přizpůsobivé ➡️")
+
     output_trim = st.slider(
         "Output Trim (Fine-tune Gain in dB)",
         min_value=-3.0,
         max_value=3.0,
         value=0.5,
-        step=0.1
+        step=0.1,
+        help="Volitelné jemné doladění celkové úrovně."
     )
 
 if ref_upload and target_upload:
