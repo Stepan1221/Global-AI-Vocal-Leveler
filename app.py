@@ -263,10 +263,12 @@ with st.expander("Advanced settings (optional)"):
     )
     st.caption("⬅️ Slower, less sensitive — Faster, more adaptive ➡️")
 
-    if st.button("Reset defaults"):
-        st.session_state.smoothing_mode = "Balanced"
-        st.session_state.intensity = 70
-        st.session_state.onset_sensitivity = 0.5
+    def reset_defaults():
+        st.session_state["smoothing_mode"] = "Balanced"
+        st.session_state["intensity"] = 70
+        st.session_state["onset_sensitivity"] = 0.5
+
+    st.button("Reset defaults", key="reset_defaults_button", on_click=reset_defaults)
 
 if ref_upload and target_upload:
     if st.button("⚡ Process and Match Volumes", type="primary"):
