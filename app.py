@@ -50,7 +50,7 @@ def calculate_r128_metrics(y, sr):
         "True Peak": f"{true_peak_db:.1f} dBTP"
     }
 
-def analyze_and_match_vocal(ref_file, target_file, intensity=70, onset_sensitivity=0.5, smoothing_mode="Balanced", max_match=False):
+def analyze_and_match_vocal(ref_file, target_file, intensity=70, onset_sensitivity=0.5, smoothing_mode="Balanced"):
     # 1. Load Audio Files
     y_ref, sr = librosa.load(ref_file, sr=None)
     y_target, _ = librosa.load(target_file, sr=sr)
@@ -146,21 +146,14 @@ def analyze_and_match_vocal(ref_file, target_file, intensity=70, onset_sensitivi
     macro_weight = np.clip(0.75 - 0.25 * onset_norm * onset_gain, 0.35, 0.75)
     micro_weight = 1.0 - macro_weight
     pure_gain_db = (macro_weight * macro_diff_db) + (micro_weight * smoothed_micro_db)
-    if max_match:
-        pure_gain_db = np.clip(pure_gain_db, -12.0, 12.0)
-        intensity_factor = 1.0
-    else:
-        pure_gain_db = np.clip(pure_gain_db, -6.0, 4.0)
+    pure_gain_db = np.clip(pure_gain_db, -6.0, 4.0)
 
     # Scale correction by intensity in dB space, but keep core phrase shape natural
     gain_db = intensity_factor * pure_gain_db
     gain_curve = 10 ** (gain_db / 20.0)
 
     # Light final smoothing; preserve transient detail while avoiding pumping
-    if max_match:
-        final_sigma = max(1.8, final_smooth_sigma * (1.0 - onset_gain * 0.10))
-    else:
-        final_sigma = max(2.4, final_smooth_sigma * (1.0 - onset_gain * 0.15))
+    final_sigma = max(2.4, final_smooth_sigma * (1.0 - onset_gain * 0.15))
     gain_curve = gaussian_filter1d(gain_curve, sigma=final_sigma)
 
     def normalized_onset_strength(signal):
@@ -309,31 +302,16 @@ with st.expander("Advanced settings (optional)"):
     st.button("Reset defaults", key="reset_defaults_button", on_click=reset_defaults)
 
 if ref_upload and target_upload:
-    col1, col2 = st.columns([2, 1])
-    process_clicked = col1.button("⚡ Process and Match Volumes", type="primary")
-    max_clicked = col2.button("🔬 Max reference test", key="max_reference_test")
-
-    if process_clicked or max_clicked:
-        max_match = max_clicked
+    if st.button("⚡ Process and Match Volumes", type="primary"):
         with st.spinner("Analyzing syllable structures and generating crossfades..."):
             try:
-                if max_match:
-                    output_audio, sample_rate, times, rms_ref, rms_target, gain_curve, final_speed, final_intensity, m_ref, m_tgt, m_out = analyze_and_match_vocal(
-                        ref_upload,
-                        target_upload,
-                        intensity=120,
-                        onset_sensitivity=1.0,
-                        smoothing_mode="Sharp",
-                        max_match=True
-                    )
-                else:
-                    output_audio, sample_rate, times, rms_ref, rms_target, gain_curve, final_speed, final_intensity, m_ref, m_tgt, m_out = analyze_and_match_vocal(
-                        ref_upload,
-                        target_upload,
-                        intensity,
-                        onset_sensitivity,
-                        smoothing_mode
-                    )
+                output_audio, sample_rate, times, rms_ref, rms_target, gain_curve, final_speed, final_intensity, m_ref, m_tgt, m_out = analyze_and_match_vocal(
+                    ref_upload,
+                    target_upload,
+                    intensity,
+                    onset_sensitivity,
+                    smoothing_mode
+                )
                 output_fn = "leveled_target_vocal.wav"
                 sf.write(output_fn, output_audio, sample_rate)
                 

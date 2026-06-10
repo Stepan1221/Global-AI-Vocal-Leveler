@@ -1,52 +1,76 @@
 # AI Vocal Leveler
 
-This project contains a Streamlit app for automatic vocal level matching. The app compares a reference vocal track with a target vocal track and adjusts the target volume to match the reference.
+A Streamlit app for automatic vocal dynamics matching. Upload a reference vocal track and a target vocal track, and the app adjusts the target vocal's volume envelope to match the reference.
 
 ## Main features
 
-- `Smart Auto-Mode`
-  - recommended mode for users who want a simple, automatic setup
-  - works automatically with an adaptive model that follows the song over time
-  - basic controls are automatic; manual tuning is available in the advanced section
+- Upload two WAV files: reference vocal and localized/target vocal
+- Automatic vocal level matching with adaptive gain automation
+- Optional advanced controls available in an expandable panel
+
+## Controls
 
 - `Smoothing Mode`
-  - options: `Smooth`, `Balanced`, `Sharp`
-  - `Smooth` = gentler response, smoother volume changes
-  - `Balanced` = a natural compromise between stability and reactivity
-  - `Sharp` = faster reaction to short syllables and transients
+  - `Smooth` = gentler processing, more natural long-form smoothing
+  - `Balanced` = medium response for natural vocal flow
+  - `Sharp` = faster adaptation for quick syllables and transients
 
-- `Match Intensity (Aggressiveness)`
-  - controls how strong the volume matching is
-  - left = more natural, smaller changes
-  - right = stronger matching to the reference
+- `Match Intensity`
+  - adjusts how strongly the app corrects the target vocal
+  - lower values keep the original feel, higher values apply stronger leveling
 
 - `Onset Sensitivity`
-  - controls how much the app reacts to fast transients and word starts
-  - low value = smoother, less aggressive changes
-  - high value = faster reaction to short syllables and attacks
+  - controls reaction speed to transient attacks and short syllables
+  - lower values = smoother, less reactive output
+  - higher values = more aggressive transient tracking
 
-- `Output Trim`
-  - fine-tunes the final output level in dB
+## Output
 
-- `Advanced settings` are hidden in an expandable section
-  - this keeps the main UI simple for users in auto mode
-  - manual options are available only when expanded
+- Downloads a leveled WAV file named `leveled_target_vocal.wav`
+- Shows loudness metrics for:
+  - reference vocal
+  - original target vocal
+  - processed output vocal
+- Displays RMS envelope comparison and applied gain automation curve
 
-## Technical improvements
+## Technical details
 
-- gain matching is calculated in dB for more natural results
-- adaptive attack/release reacts to onset strength
-- dynamic weighting between phrase and micro-transient correction
-- hysteresis gating preserves breaths and soft endings
-- clearer UI with an advanced settings section
+- Uses dB-domain gain matching for more natural loudness correction
+- Applies phrase-level and micro-level smoothing with adaptive weighting
+- Onset-based sensitivity helps preserve transient clarity
+- Hysteresis gating avoids pumping during breaths and quiet passages
+- Global energy rebalance keeps output aligned with the reference
+
+## Project files
+
+- `app.py` — hlavní Streamlit aplikace pro nahrání, analýzu a zpracování vokálů
+- `requirements.txt` — potřebné Python balíčky
+- `README.md` — popis a instrukce pro spuštění projektu
+
+## Requirements
+
+- Python 3.9+
+- `streamlit`
+- `numpy`
+- `librosa`
+- `soundfile`
+- `scipy`
+- `matplotlib`
+- `pandas`
+
+Install with:
+
+```bash
+pip install -r requirements.txt
+```
 
 ## Run the app
 
 ```bash
-pip install -r requirements.txt
 streamlit run app.py
 ```
 
-## Note
+## Notes
 
-This file is meant to be shared with other developers and technicians so they can understand the current app features and behavior.
+- Use WAV files for best compatibility.
+- The app is designed for offline processing of vocal stems and export of a leveled WAV file.
