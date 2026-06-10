@@ -142,14 +142,24 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
     y_modulated = y_target * gain_samples
     
     # Natural Gating for Silence & Breaths (avoids noise-floor pump)
-    silence_threshold = 0.004
+    silence_threshold_ref = 0.003
+    silence_threshold_tgt = 0.002
     rms_ref_samples = np.interp(
         np.arange(len(y_ref)),
         np.arange(len(rms_ref_micro)) * hop_length,
         rms_ref_micro
     )
-    y_modulated[rms_ref_samples < silence_threshold] = 0
-    
+    rms_target_samples = np.interp(
+        np.arange(len(y_target)),
+        np.arange(len(rms_target_micro)) * hop_length,
+        rms_target_micro
+    )
+    active_mask = (
+        (rms_ref_samples >= silence_threshold_ref) |
+        (rms_target_samples >= silence_threshold_tgt)
+    )
+    y_modulated[~active_mask] = 0
+
     # Global Energy Trim Match to center the mix perfectly
     rms_global_ref = np.sqrt(np.mean(y_ref**2))
     rms_global_out = np.sqrt(np.mean(y_modulated**2))
