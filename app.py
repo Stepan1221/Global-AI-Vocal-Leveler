@@ -50,7 +50,7 @@ def calculate_r128_metrics(y, sr):
         "True Peak": f"{true_peak_db:.1f} dBTP"
     }
 
-def analyze_and_match_vocal(ref_file, target_file, intensity=70, onset_sensitivity=0.5, smoothing_mode="Balanced"):
+def analyze_and_match_vocal(ref_file, target_file, intensity=70, onset_sensitivity=0.5, smoothing_mode="Balanced", max_match=False):
     # 1. Load Audio Files
     y_ref, sr = librosa.load(ref_file, sr=None)
     y_target, _ = librosa.load(target_file, sr=sr)
@@ -132,30 +132,45 @@ def analyze_and_match_vocal(ref_file, target_file, intensity=70, onset_sensitivi
     micro_diff_db = rms_ref_micro_db - rms_target_micro_db
 
     onset_gain = onset_sensitivity
-    attack = np.clip(0.12 + onset_norm * (0.25 + onset_gain * 0.2), 0.12, 0.6)
-    release = np.clip(0.12 + (1.0 - onset_norm) * (0.18 - onset_gain * 0.08), 0.06, 0.28)
+    downward_alpha = np.clip(0.14 + onset_norm * (0.32 + onset_gain * 0.18), 0.14, 0.8)
+    upward_alpha = np.clip(0.10 + (1.0 - onset_norm) * (0.16 - onset_gain * 0.06), 0.06, 0.28)
 
     smoothed_micro_db = np.zeros_like(micro_diff_db)
     smoothed_micro_db[0] = micro_diff_db[0]
     for i in range(1, num_frames):
         diff = micro_diff_db[i] - smoothed_micro_db[i-1]
-        alpha = attack[i] if diff > 0 else release[i]
+        alpha = downward_alpha[i] if diff < 0 else upward_alpha[i]
         smoothed_micro_db[i] = smoothed_micro_db[i-1] + alpha * diff
 
-    # Combined target: phrase flow plus micro-syllable correction and onset sensitivity
+    # Combined target: phrase flow plus micro-syllable correction for transients
     macro_weight = np.clip(0.75 - 0.25 * onset_norm * onset_gain, 0.35, 0.75)
     micro_weight = 1.0 - macro_weight
     pure_gain_db = (macro_weight * macro_diff_db) + (micro_weight * smoothed_micro_db)
-    pure_gain_db = np.clip(pure_gain_db, -6.0, 4.0)
+    if max_match:
+        pure_gain_db = np.clip(pure_gain_db, -12.0, 12.0)
+        intensity_factor = 1.0
+    else:
+        pure_gain_db = np.clip(pure_gain_db, -6.0, 4.0)
 
     # Scale correction by intensity in dB space, but keep core phrase shape natural
     gain_db = intensity_factor * pure_gain_db
     gain_curve = 10 ** (gain_db / 20.0)
 
     # Light final smoothing; preserve transient detail while avoiding pumping
-    final_sigma = max(2.4, final_smooth_sigma * (1.0 - onset_gain * 0.15))
+    if max_match:
+        final_sigma = max(1.8, final_smooth_sigma * (1.0 - onset_gain * 0.10))
+    else:
+        final_sigma = max(2.4, final_smooth_sigma * (1.0 - onset_gain * 0.15))
     gain_curve = gaussian_filter1d(gain_curve, sigma=final_sigma)
-    
+
+    def normalized_onset_strength(signal):
+        onset = librosa.onset.onset_strength(y=signal, sr=sr, hop_length=hop_length)
+        if len(onset) < num_frames:
+            onset = np.pad(onset, (0, num_frames - len(onset)), mode="constant")
+        else:
+            onset = onset[:num_frames]
+        return onset / (np.max(onset) + 1e-6)
+
     gain_samples = np.interp(
         np.arange(len(y_target)), 
         np.arange(len(gain_curve)) * hop_length, 
@@ -164,7 +179,30 @@ def analyze_and_match_vocal(ref_file, target_file, intensity=70, onset_sensitivi
     
     # 3. Apply pure volume modification
     y_modulated = y_target * gain_samples
-    
+
+    # Quick self-audit: if output is too aggressive or too muted, adjust gently
+    output_onset_norm = normalized_onset_strength(y_modulated)
+    onset_ratio = np.mean(output_onset_norm / (onset_norm + 1e-6))
+    avg_gain_db = np.mean(np.abs(gain_db))
+    positive_gain_avg = np.mean(gain_db[gain_db > 0]) if np.any(gain_db > 0) else 0.0
+
+    if onset_ratio > 1.18 and avg_gain_db > 2.2:
+        backoff = 0.82 + 0.08 * (1.0 - np.clip(np.mean(onset_norm), 0.0, 1.0))
+        gain_db = gain_db * backoff
+    elif onset_ratio < 0.9 and positive_gain_avg > 0.8:
+        boost = 1.06 + 0.06 * np.clip((0.9 - onset_ratio) / 0.15, 0.0, 1.0)
+        gain_db = np.where(gain_db > 0, gain_db * boost, gain_db)
+
+    if onset_ratio > 1.18 and avg_gain_db > 2.2 or onset_ratio < 0.9 and positive_gain_avg > 0.8:
+        gain_curve = 10 ** (gain_db / 20.0)
+        gain_curve = gaussian_filter1d(gain_curve, sigma=final_sigma)
+        gain_samples = np.interp(
+            np.arange(len(y_target)), 
+            np.arange(len(gain_curve)) * hop_length, 
+            gain_curve
+        )
+        y_modulated = y_target * gain_samples
+
     # Natural hysteresis gating for silence, breaths and soft tails
     silence_threshold_on = 0.004
     silence_threshold_off = 0.002
@@ -271,17 +309,31 @@ with st.expander("Advanced settings (optional)"):
     st.button("Reset defaults", key="reset_defaults_button", on_click=reset_defaults)
 
 if ref_upload and target_upload:
-    if st.button("⚡ Process and Match Volumes", type="primary"):
+    col1, col2 = st.columns([2, 1])
+    process_clicked = col1.button("⚡ Process and Match Volumes", type="primary")
+    max_clicked = col2.button("🔬 Max reference test", key="max_reference_test")
+
+    if process_clicked or max_clicked:
+        max_match = max_clicked
         with st.spinner("Analyzing syllable structures and generating crossfades..."):
             try:
-                output_audio, sample_rate, times, rms_ref, rms_target, gain_curve, final_speed, final_intensity, m_ref, m_tgt, m_out = analyze_and_match_vocal(
-                    ref_upload,
-                    target_upload,
-                    intensity,
-                    onset_sensitivity,
-                    smoothing_mode
-                )
-                
+                if max_match:
+                    output_audio, sample_rate, times, rms_ref, rms_target, gain_curve, final_speed, final_intensity, m_ref, m_tgt, m_out = analyze_and_match_vocal(
+                        ref_upload,
+                        target_upload,
+                        intensity=120,
+                        onset_sensitivity=1.0,
+                        smoothing_mode="Sharp",
+                        max_match=True
+                    )
+                else:
+                    output_audio, sample_rate, times, rms_ref, rms_target, gain_curve, final_speed, final_intensity, m_ref, m_tgt, m_out = analyze_and_match_vocal(
+                        ref_upload,
+                        target_upload,
+                        intensity,
+                        onset_sensitivity,
+                        smoothing_mode
+                    )
                 output_fn = "leveled_target_vocal.wav"
                 sf.write(output_fn, output_audio, sample_rate)
                 
