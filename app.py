@@ -113,24 +113,39 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
 
     onset_combined = (onset_strength_ref + onset_strength_tgt) * 0.5
     onset_norm = onset_combined / (np.max(onset_combined) + 1e-6)
-    onset_boost = 1.0 + 0.35 * onset_norm
+
+    # Use dB-domain ratios for more natural gain matching
+    epsilon = 1e-6
+    rms_ref_db = 20 * np.log10(rms_ref + epsilon)
+    rms_target_db = 20 * np.log10(rms_target + epsilon)
+    rms_ref_macro_db = 20 * np.log10(rms_ref_macro + epsilon)
+    rms_target_macro_db = 20 * np.log10(rms_target_macro + epsilon)
+    rms_ref_micro_db = 20 * np.log10(rms_ref_micro + epsilon)
+    rms_target_micro_db = 20 * np.log10(rms_target_micro + epsilon)
+
+    macro_diff_db = rms_ref_macro_db - rms_target_macro_db
+    micro_diff_db = rms_ref_micro_db - rms_target_micro_db
+
+    attack = np.clip(0.15 + onset_norm * 0.35, 0.15, 0.5)
+    release = np.clip(0.08 + (1.0 - onset_norm) * 0.12, 0.08, 0.2)
+
+    smoothed_micro_db = np.zeros_like(micro_diff_db)
+    smoothed_micro_db[0] = micro_diff_db[0]
+    for i in range(1, num_frames):
+        diff = micro_diff_db[i] - smoothed_micro_db[i-1]
+        alpha = attack[i] if diff > 0 else release[i]
+        smoothed_micro_db[i] = smoothed_micro_db[i-1] + alpha * diff
 
     # Combined target: phrase flow plus micro-syllable correction and onset sensitivity
-    epsilon = 1e-3
-    macro_gain = (rms_ref_macro + epsilon) / (rms_target_macro + epsilon)
-    micro_gain = ((rms_ref_micro + epsilon) / (rms_target_micro + epsilon)) * onset_boost
-    
-    # Weighted integration: equal emphasis on phrase and local syllable behavior
-    pure_gain_curve = (0.5 * macro_gain) + (0.5 * micro_gain)
-    
-    # Safety boundaries mimicking a cautious mixing engineer (-7 dB to +4.5 dB)
-    pure_gain_curve = np.clip(pure_gain_curve, 0.45, 1.68)
-    
-    # Apply intensity curve scaling
-    gain_curve = 1.0 + intensity_factor * (pure_gain_curve - 1.0)
-    
-    # Post-smoothing the fader movements just enough to preserve quick syllables
-    gain_curve = gaussian_filter1d(gain_curve, sigma=12)
+    pure_gain_db = (0.55 * macro_diff_db) + (0.45 * smoothed_micro_db)
+    pure_gain_db = np.clip(pure_gain_db, -7.0, 4.5)
+
+    # Scale correction by intensity in dB space
+    gain_db = intensity_factor * pure_gain_db
+    gain_curve = 10 ** (gain_db / 20.0)
+
+    # Light final smoothing; preserve transient detail while avoiding pumping
+    gain_curve = gaussian_filter1d(gain_curve, sigma=8)
     
     gain_samples = np.interp(
         np.arange(len(y_target)), 
@@ -141,9 +156,9 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
     # 3. Apply pure volume modification
     y_modulated = y_target * gain_samples
     
-    # Natural Gating for Silence & Breaths (avoids noise-floor pump)
-    silence_threshold_ref = 0.003
-    silence_threshold_tgt = 0.002
+    # Natural hysteresis gating for silence, breaths and soft tails
+    silence_threshold_on = 0.004
+    silence_threshold_off = 0.002
     rms_ref_samples = np.interp(
         np.arange(len(y_ref)),
         np.arange(len(rms_ref_micro)) * hop_length,
@@ -154,10 +169,16 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
         np.arange(len(rms_target_micro)) * hop_length,
         rms_target_micro
     )
-    active_mask = (
-        (rms_ref_samples >= silence_threshold_ref) |
-        (rms_target_samples >= silence_threshold_tgt)
-    )
+
+    active_mask = np.zeros(len(y_ref), dtype=bool)
+    gate_open = False
+    for i in range(len(y_ref)):
+        if rms_ref_samples[i] >= silence_threshold_on or rms_target_samples[i] >= silence_threshold_on:
+            gate_open = True
+        elif rms_ref_samples[i] < silence_threshold_off and rms_target_samples[i] < silence_threshold_off:
+            gate_open = False
+        active_mask[i] = gate_open
+
     y_modulated[~active_mask] = 0
 
     # Global Energy Trim Match to center the mix perfectly
