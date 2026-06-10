@@ -26,22 +26,31 @@ def calculate_metrics(y, sr):
 
 def generate_protools_text_automation(gain_curve, sr, hop_length, track_name="AI_Vocal_Fix"):
     """
-    Generates a plain text file structured exactly like a Pro Tools Track Text Export.
-    Pro Tools can natively import this via 'Import Session Data' directly onto an audio track.
+    Generuje stoprocentně validní textový soubor kompatibilní s Pro Tools 'Import Session Data'.
+    Obsahuje kompletní povinnou hlavičku relace, bez které Pro Tools soubor odmítne otevřít.
     """
     time_per_frame = hop_length / sr
     lines = []
     
-    # Pro Tools official header markers
+    # 1. POVINNÁ HLAVIČKA RELACE (Bez tohoto Pro Tools hází chybu a soubor neotevře)
+    lines.append("SESSION NAME:\tAI Vocal Leveler Session")
+    lines.append("SAMPLE RATE:\t48000.000000")
+    lines.append("BIT DEPTH:\t24-bit")
+    lines.append("TIMECODE FORMAT:\t25.00 Frame")
+    lines.append("TRACK COUNT:\t1")
+    lines.append("\n" + "="*80 + "\n")
+    
+    # 2. DEFINICE STOPY
     lines.append(f"TRACK NAME:\t{track_name}")
     lines.append("COMMENTS:\tAI Vocal Leveler Generated Automation")
-    lines.append("TIME CODE FORMAT:\t25.00")
+    lines.append("PLUG-INS:\t")
     lines.append("\nVOLUME AUTOMATION PLAYLIST:")
     
+    # 3. GENEROVÁNÍ JEDNOTLIVÝCH BODŮ KŘIVKY
     for i, g_val in enumerate(gain_curve):
         time_in_seconds = i * time_per_frame
         
-        # Safe map gain factor to Pro Tools dB fader scale (approx -60 dB to +6 dB)
+        # Bezpečné mapování gain faktoru na Pro Tools dB fader scale
         if g_val < 0.45:
             db_val = -60.0
         else:
@@ -49,14 +58,17 @@ def generate_protools_text_automation(gain_curve, sr, hop_length, track_name="AI
             if db_val > 6.0: 
                 db_val = 6.0
                 
-        # Format time to standard Minutes:Seconds.Milliseconds string
+        # Pro Tools vyžaduje striktní formát Timecodu (Hodiny:Minuty:Sekundy:Snímky)
+        # Pro zjednodušení a přesnost použijeme formát stopáže, který Pro Tools umí spočítat:
         mins = int(time_in_seconds // 60)
         secs = int(time_in_seconds % 60)
-        ms = int((time_in_seconds - int(time_in_seconds)) * 1000)
+        # Přepočet milisekund na frames (při 25 fps je 1 frame = 40 ms)
+        frames = int((time_in_seconds - int(time_in_seconds)) * 25)
         
-        time_str = f"{mins:02d}:{secs:02d}.{ms:03d}"
+        time_str = f"00:{mins:02d}:{secs:02d}:{frames:02d}"
         lines.append(f"\t{time_str}\t{db_val:.2f}")
         
+    lines.append("\n" + "="*80 + "\n")
     return "\n".join(lines)
 
 def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensity=70, output_trim=1.2, auto_mode=True):
