@@ -50,7 +50,7 @@ def calculate_r128_metrics(y, sr):
         "True Peak": f"{true_peak_db:.1f} dBTP"
     }
 
-def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensity=70, output_trim=1.2, auto_mode=True):
+def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensity=70, onset_sensitivity=0.5, smoothing_mode="Balanced", output_trim=1.2, auto_mode=True):
     # 1. Load Audio Files
     y_ref, sr = librosa.load(ref_file, sr=None)
     y_target, _ = librosa.load(target_file, sr=sr)
@@ -73,22 +73,38 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
     
     # 2. ADVANCED SYLLABLE & PHRASE SMOOTHING (Dual-Stage Window)
     # Fast tracking window for catch-up on hot syllables, wide window for natural crossfades
+    intensity_factor = intensity / 100.0
+    if smoothing_mode == "Smooth":
+        fast_sigma = 22.0
+        phrase_sigma = 140.0
+        final_smooth_sigma = 12
+        gate_sigma = 22
+        mode_label = "Smooth"
+    elif smoothing_mode == "Sharp":
+        fast_sigma = 8.0
+        phrase_sigma = 55.0
+        final_smooth_sigma = 4
+        gate_sigma = 10
+        mode_label = "Sharp"
+    else:
+        fast_sigma = 14.0
+        phrase_sigma = 95.0
+        final_smooth_sigma = 8
+        gate_sigma = 16
+        mode_label = "Balanced"
+
     if auto_mode:
-        fast_sigma = 12.0    # Fast enough to keep first syllables alive
-        phrase_sigma = 95.0  # Smooth phrase motion while avoiding over-smearing
-        intensity_factor = intensity / 100.0
-        fader_speed = "AI Syllable Leveler + Smart Crossfade"
+        fader_speed = f"Auto {mode_label}"
     else:
         if fader_speed == "Fast (Sharp)":
-            fast_sigma = 8.0
-            phrase_sigma = 55.0
-        elif fader_speed == "Normal (Medium)":
-            fast_sigma = 14.0
-            phrase_sigma = 95.0
+            fast_sigma = max(8.0, fast_sigma - 4.0)
+            phrase_sigma = max(55.0, phrase_sigma - 30.0)
+            gate_sigma = max(10, gate_sigma - 4)
         elif fader_speed == "Slow (Loose)":
-            fast_sigma = 24.0
-            phrase_sigma = 140.0
-        intensity_factor = intensity / 100.0
+            fast_sigma = min(30.0, fast_sigma + 10.0)
+            phrase_sigma = min(160.0, phrase_sigma + 40.0)
+            gate_sigma = min(26, gate_sigma + 6)
+        fader_speed = f"Manual {mode_label}"
 
     # Calculate phrase level trends and transient syllable spikes
     rms_ref_macro = gaussian_filter1d(rms_ref, sigma=phrase_sigma)
@@ -126,8 +142,9 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
     macro_diff_db = rms_ref_macro_db - rms_target_macro_db
     micro_diff_db = rms_ref_micro_db - rms_target_micro_db
 
-    attack = np.clip(0.15 + onset_norm * 0.35, 0.15, 0.5)
-    release = np.clip(0.08 + (1.0 - onset_norm) * 0.12, 0.08, 0.2)
+    onset_gain = onset_sensitivity
+    attack = np.clip(0.12 + onset_norm * (0.25 + onset_gain * 0.2), 0.12, 0.6)
+    release = np.clip(0.12 + (1.0 - onset_norm) * (0.18 - onset_gain * 0.08), 0.06, 0.28)
 
     smoothed_micro_db = np.zeros_like(micro_diff_db)
     smoothed_micro_db[0] = micro_diff_db[0]
@@ -137,7 +154,7 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
         smoothed_micro_db[i] = smoothed_micro_db[i-1] + alpha * diff
 
     # Combined target: phrase flow plus micro-syllable correction and onset sensitivity
-    macro_weight = np.clip(0.65 - 0.25 * onset_norm, 0.35, 0.65)
+    macro_weight = np.clip(0.65 - 0.35 * onset_norm * onset_gain, 0.25, 0.65)
     micro_weight = 1.0 - macro_weight
     pure_gain_db = (macro_weight * macro_diff_db) + (micro_weight * smoothed_micro_db)
     pure_gain_db = np.clip(pure_gain_db, -7.0, 4.5)
@@ -147,7 +164,8 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
     gain_curve = 10 ** (gain_db / 20.0)
 
     # Light final smoothing; preserve transient detail while avoiding pumping
-    gain_curve = gaussian_filter1d(gain_curve, sigma=8)
+    final_sigma = max(2.0, final_smooth_sigma * (1.0 - onset_gain * 0.4))
+    gain_curve = gaussian_filter1d(gain_curve, sigma=final_sigma)
     
     gain_samples = np.interp(
         np.arange(len(y_target)), 
@@ -181,7 +199,7 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
             gate_state = False
         gate_values[i] = 1.0 if gate_state else 0.0
 
-    gate_envelope = gaussian_filter1d(gate_values, sigma=16)
+    gate_envelope = gaussian_filter1d(gate_values, sigma=gate_sigma)
     gate_envelope = np.clip(gate_envelope, 0.0, 1.0)
     y_modulated *= gate_envelope
 
@@ -221,27 +239,76 @@ st.subheader("🎛️ Control Panel")
 
 auto_mode = st.toggle("🧠 Smart Auto-Analyze (Recommended)", value=True)
 
+smoothing_mode = st.selectbox(
+    "Smoothing Mode",
+    options=["Smooth", "Balanced", "Sharp"],
+    index=1,
+    help="Smooth = gentler reaction, Sharp = more reactive to syllables, Balanced = natural compromise."
+)
+
+intensity = st.slider(
+    "Match Intensity (Aggressiveness %)",
+    min_value=10,
+    max_value=120,
+    value=70,
+    step=5,
+    help="Left = more natural, Right = more aggressive."
+)
+st.caption("⬅️ Méně korekce / Plynulejší zvuk — Více korekce ➡️")
+
+onset_sensitivity = st.slider(
+    "Onset Sensitivity",
+    min_value=0.0,
+    max_value=1.0,
+    value=0.5,
+    step=0.05,
+    help="Left = pomalejší reakce, Right = rychlejší nástupy."
+)
+st.caption("⬅️ Pomalejší, méně citlivé — Rychlejší, více přizpůsobivé ➡️")
+
 if auto_mode:
-    st.info("💡 **Smart Auto-Mode is ACTIVE.** Operating in Syllable Leveler mode with automatic crossfades.")
+    st.info("💡 **Smart Auto-Mode is ACTIVE.** Automatic syllable-level matching with adjustable reaction settings.")
     fader_speed = "Auto"
-    intensity = 70
-    output_trim = 0.5
 else:
     st.warning("🎚️ **Manual Control Mode Active.**")
     col1, col2 = st.columns(2)
     with col1:
-        fader_speed = st.select_slider("Fader Response Window", options=["Slow (Loose)", "Normal (Medium)", "Fast (Sharp)"], value="Normal (Medium)")
+        fader_speed = st.select_slider(
+            "Fader Response Window",
+            options=["Slow (Loose)", "Normal (Medium)", "Fast (Sharp)"],
+            value="Normal (Medium)"
+        )
     with col2:
-        intensity = st.slider("Match Intensity (Aggressiveness %)", min_value=10, max_value=100, value=70, step=5)
-    
-    output_trim = st.slider("Output Trim (Fine-tune Gain in dB)", min_value=-3.0, max_value=3.0, value=0.5, step=0.1)
+        output_trim = st.slider(
+            "Output Trim (Fine-tune Gain in dB)",
+            min_value=-3.0,
+            max_value=3.0,
+            value=0.5,
+            step=0.1
+        )
+
+if auto_mode:
+    output_trim = st.slider(
+        "Output Trim (Fine-tune Gain in dB)",
+        min_value=-3.0,
+        max_value=3.0,
+        value=0.5,
+        step=0.1
+    )
 
 if ref_upload and target_upload:
     if st.button("⚡ Process and Match Volumes", type="primary"):
         with st.spinner("Analyzing syllable structures and generating crossfades..."):
             try:
                 output_audio, sample_rate, times, rms_ref, rms_target, gain_curve, final_speed, final_intensity, m_ref, m_tgt, m_out = analyze_and_match_vocal(
-                    ref_upload, target_upload, fader_speed, intensity, output_trim, auto_mode
+                    ref_upload,
+                    target_upload,
+                    fader_speed,
+                    intensity,
+                    onset_sensitivity,
+                    smoothing_mode,
+                    output_trim,
+                    auto_mode
                 )
                 
                 output_fn = "leveled_target_vocal.wav"
