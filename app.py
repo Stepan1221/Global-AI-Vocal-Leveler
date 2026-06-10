@@ -276,6 +276,34 @@ if ref_upload and target_upload:
                 st.subheader("💾 Download Options")
                 
                 col1, col2 = st.columns(2)
-                
+    
                 with col1:
-                    st.write("
+                    st.write("🟢 **Scenario A: Ideal Output**")
+                    st.caption("Pre-rendered and fully leveled WAV file ready for the mix.")
+                    st.audio(output_fn, format="audio/wav")
+                    with open(output_fn, "rb") as file:
+                        st.download_button(
+                            label="🚀 Download Leveled Vocal WAV",
+                            data=file,
+                            file_name="leveled_target_vocal.wav",
+                            mime="audio/wav",
+                            use_container_width=True
+                        )
+                        
+                with col2:
+                    st.write("🔵 **Scenario B: Pro Tools Automation Import**")
+                    st.caption("Pure volume curve data format. Import this directly onto your audio track in Pro Tools.")
+                    with open(text_fn, "rb") as file:
+                        st.download_button(
+                            label="🎛️ Download Pro Tools Track Automation (.txt)",
+                            data=file,
+                            file_name="protools_volume_automation.txt",
+                            mime="text/plain",
+                            use_container_width=True
+                        )
+                
+                os.remove(output_fn)
+                os.remove(text_fn)
+                
+            except Exception as e:
+                st.error(f"An error occurred during processing: {e}")
