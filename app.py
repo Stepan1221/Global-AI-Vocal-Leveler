@@ -12,18 +12,14 @@ def calculate_r128_metrics(y, sr):
     Calculates audio metrics calibrated to match standard DAW LUFS meters.
     Uses clean RMS energy with an ITU-R calibrated offset to ensure accuracy.
     """
-    # 1. True Peak (dBTP)
     peak_val = np.max(np.abs(y))
     true_peak_db = 20 * np.log10(peak_val + 1e-6)
     
-    # 2. Calibrated Integrated Loudness (LUFS)
-    # Calibrated so that standard vocal files align with standard -23 to -14 LUFS ranges
     rms_val = np.sqrt(np.mean(y**2))
     lufs = 20 * np.log10(rms_val + 1e-6) + 1.6
     
     if lufs < -70: lufs = -70.0
     
-    # 3. Loudness Range (LU Approximation)
     hop_len = int(sr * 0.1)
     win_len = int(sr * 0.4)
     
@@ -55,6 +51,7 @@ def calculate_r128_metrics(y, sr):
     }
 
 def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensity=70, output_trim=1.2, auto_mode=True):
+    # 1. Load Audio Files
     y_ref, sr = librosa.load(ref_file, sr=None)
     y_target, _ = librosa.load(target_file, sr=sr)
     
@@ -62,84 +59,60 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
     y_ref = librosa.util.fix_length(y_ref, size=max_len)
     y_target = librosa.util.fix_length(y_target, size=max_len)
     
-    hop_length = 512
-    frame_length = 2048
+    hop_length = 256  # Higher resolution for syllable accuracy (approx 5.8ms frames)
+    frame_length = 1024
     
     y_ref_norm = y_ref / (np.max(np.abs(y_ref)) + 1e-6)
     y_target_norm = y_target / (np.max(np.abs(y_target)) + 1e-6)
     
+    # Base RMS tracking
     rms_ref = librosa.feature.rms(y=y_ref_norm, frame_length=frame_length, hop_length=hop_length)[0]
     rms_target = librosa.feature.rms(y=y_target_norm, frame_length=frame_length, hop_length=hop_length)[0]
     
     num_frames = len(rms_ref)
     
+    # 2. ADVANCED SYLLABLE & PHRASE SMOOTHING (Dual-Stage Window)
+    # Fast tracking window for catch-up on hot syllables, ultra-wide window for natural crossfades
     if auto_mode:
-        try:
-            y_harm, y_perc = librosa.effects.hpss(y_ref)
-            rms_perc = librosa.feature.rms(y=y_perc, frame_length=frame_length, hop_length=hop_length)[0]
-            rms_harm = librosa.feature.rms(y=y_harm, frame_length=frame_length, hop_length=hop_length)[0]
-            
-            percussive_ratio = (rms_perc + 1e-6) / (rms_harm + rms_perc + 1e-6)
-            spec_centroid = librosa.feature.spectral_centroid(y=y_ref, sr=sr, n_fft=frame_length, hop_length=hop_length)[0]
-            spec_norm = np.clip(spec_centroid / 4000.0, 0.0, 1.0)
-            
-            dynamic_intensity = 0.65 + (percussive_ratio * 0.15) - (spec_norm * 0.08)
-            dynamic_intensity = np.clip(dynamic_intensity, 0.55, 0.75) 
-            
-            dynamic_sigma = 75.0 - (percussive_ratio * 40.0)
-            dynamic_sigma = np.clip(dynamic_sigma, 40.0, 95.0)
-            
-            intensity_curve = gaussian_filter1d(dynamic_intensity, sigma=50)
-            sigma_curve = gaussian_filter1d(dynamic_sigma, sigma=50)
-            
-            intensity = int(np.mean(intensity_curve) * 100)
-            avg_sigma = np.mean(sigma_curve)
-            if avg_sigma < 55: fader_speed = "Dynamic: Fast / Sharp"
-            elif avg_sigma > 75: fader_speed = "Dynamic: Smooth / Loose"
-            else: fader_speed = "Dynamic: Balanced Center"
-            
-        except:
-            intensity_curve = np.full(num_frames, 0.68)
-            sigma_curve = np.full(num_frames, 65.0)
-            intensity = 68
-            fader_speed = "Normal (Backup)"
+        fast_sigma = 25.0    # Fast enough to catch a single heavy syllable
+        phrase_sigma = 140.0  # Wide enough to act as a 1-second smooth crossfade across the word
+        intensity_factor = intensity / 100.0
+        fader_speed = "AI Syllable Leveler + Smart Crossfade"
     else:
         if fader_speed == "Fast (Sharp)":
-            static_sigma = 45.0
+            fast_sigma = 15.0
+            phrase_sigma = 90.0
         elif fader_speed == "Normal (Medium)":
-            static_sigma = 65.0
+            fast_sigma = 25.0
+            phrase_sigma = 140.0
         elif fader_speed == "Slow (Loose)":
-            static_sigma = 95.0
-            
-        intensity_curve = np.full(num_frames, intensity / 100.0)
-        sigma_curve = np.full(num_frames, static_sigma)
+            fast_sigma = 40.0
+            phrase_sigma = 200.0
+        intensity_factor = intensity / 100.0
 
-    if auto_mode:
-        rms_ref_smooth = np.zeros_like(rms_ref)
-        rms_target_smooth = np.zeros_like(rms_target)
-        for i in range(num_frames):
-            current_sigma = sigma_curve[i]
-            rms_ref_smooth[i] = gaussian_filter1d(rms_ref, sigma=current_sigma)[i]
-            rms_target_smooth[i] = gaussian_filter1d(rms_target, sigma=current_sigma)[i]
-    else:
-        rms_ref_smooth = gaussian_filter1d(rms_ref, sigma=sigma_curve[0])
-        rms_target_smooth = gaussian_filter1d(rms_target, sigma=sigma_curve[0])
+    # Calculate phrase level trends and transient syllable spikes
+    rms_ref_macro = gaussian_filter1d(rms_ref, sigma=phrase_sigma)
+    rms_target_macro = gaussian_filter1d(rms_target, sigma=phrase_sigma)
     
-    rms_global_ref = np.sqrt(np.mean(y_ref**2))
-    rms_global_target = np.sqrt(np.mean(y_target**2))
+    rms_ref_micro = gaussian_filter1d(rms_ref, sigma=fast_sigma)
+    rms_target_micro = gaussian_filter1d(rms_target, sigma=fast_sigma)
     
-    global_gain_factor = rms_global_ref / (rms_global_target + 1e-6)
-    fine_tune_factor = 10**(output_trim / 20)
-    final_global_gain = global_gain_factor * fine_tune_factor
-    
+    # Combined target: prioritizes phrase flow, but injects micro-fixes for runaway syllables
     epsilon = 1e-3
-    pure_gain_curve = np.clip((rms_ref_smooth + epsilon) / (rms_target_smooth + epsilon), 0.45, 1.65) 
-    gain_curve = 1.0 + intensity_curve * (pure_gain_curve - 1.0)
+    macro_gain = (rms_ref_macro + epsilon) / (rms_target_macro + epsilon)
+    micro_gain = (rms_ref_micro + epsilon) / (rms_target_micro + epsilon)
     
-    if auto_mode:
-        gain_curve = gaussian_filter1d(gain_curve, sigma=int(np.mean(sigma_curve)))
-    else:
-        gain_curve = gaussian_filter1d(gain_curve, sigma=sigma_curve[0])
+    # Weighted integration: 65% phrase matching, 35% localized syllable correction
+    pure_gain_curve = (0.65 * macro_gain) + (0.35 * micro_gain)
+    
+    # Strict safety boundaries mimicking a cautious mixing engineer (-7 dB to +4.5 dB)
+    pure_gain_curve = np.clip(pure_gain_curve, 0.45, 1.68) 
+    
+    # Apply intensity curve scaling
+    gain_curve = 1.0 + intensity_factor * (pure_gain_curve - 1.0)
+    
+    # Crucial step: Post-smoothing the fader movements to create automatic crossfades between syllable changes
+    gain_curve = gaussian_filter1d(gain_curve, sigma=35)
     
     gain_samples = np.interp(
         np.arange(len(y_target)), 
@@ -147,28 +120,38 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
         gain_curve
     )
     
-    y_modulated = y_target * gain_samples * final_global_gain
+    # 3. Apply pure volume modification
+    y_modulated = y_target * gain_samples
     
-    silence_threshold = 0.005
+    # Natural Gating for Silence & Breaths (avoids noise-floor pump)
+    silence_threshold = 0.008
     rms_ref_samples = np.interp(
         np.arange(len(y_ref)),
-        np.arange(len(rms_ref_smooth)) * hop_length,
-        rms_ref_smooth
+        np.arange(len(rms_ref_macro)) * hop_length,
+        rms_ref_macro
     )
     y_modulated[rms_ref_samples < silence_threshold] = 0
     
-    max_val = np.max(np.abs(y_modulated))
-    if max_val > 0.99:
-        y_modulated = y_modulated / max_val * 0.99
-
-    times = librosa.times_like(rms_ref_smooth, sr=sr, hop_length=hop_length)
+    # Global Energy Trim Match to center the mix perfectly
+    rms_global_ref = np.sqrt(np.mean(y_ref**2))
+    rms_global_out = np.sqrt(np.mean(y_modulated**2))
+    fine_tune_factor = 10**(output_trim / 20)
+    global_rebalance = (rms_global_ref / (rms_global_out + 1e-6)) * fine_tune_factor
     
-    # Calculate R128 Industry Metrics for UI presentation
+    y_modulated = y_modulated * global_rebalance
+    
+    # Final Brickwall Safety Ceiling
+    max_val = np.max(np.abs(y_modulated))
+    if max_val > 0.98:
+        y_modulated = y_modulated / max_val * 0.98
+
+    times = librosa.times_like(rms_ref_macro, sr=sr, hop_length=hop_length)
+    
     metrics_ref = calculate_r128_metrics(y_ref, sr)
     metrics_target = calculate_r128_metrics(y_target, sr)
     metrics_out = calculate_r128_metrics(y_modulated, sr)
     
-    return y_modulated, sr, times, rms_ref_smooth, rms_target_smooth, gain_curve, fader_speed, intensity, metrics_ref, metrics_target, metrics_out
+    return y_modulated, sr, times, rms_ref_macro, rms_target_macro, gain_curve, fader_speed, intensity, metrics_ref, metrics_target, metrics_out
 
 # --- WEB INTERFACE ---
 st.set_page_config(page_title="AI Vocal Leveler", page_icon="🎤", layout="centered")
@@ -186,23 +169,23 @@ st.subheader("🎛️ Control Panel")
 auto_mode = st.toggle("🧠 Smart Auto-Analyze (Recommended)", value=True)
 
 if auto_mode:
-    st.info("💡 **Smart Auto-Mode is ACTIVE.** The system automatically analyzes the song structure and dynamically adjusts fader speed and match intensity.")
+    st.info("💡 **Smart Auto-Mode is ACTIVE.** Operating in Syllable Leveler mode with automatic crossfades.")
     fader_speed = "Auto"
     intensity = 70
-    output_trim = 1.2
+    output_trim = 0.5
 else:
     st.warning("🎚️ **Manual Control Mode Active.**")
     col1, col2 = st.columns(2)
     with col1:
-        fader_speed = st.select_slider("Fader Speed (Reaction)", options=["Slow (Loose)", "Normal (Medium)", "Fast (Sharp)"], value="Normal (Medium)")
+        fader_speed = st.select_slider("Fader Response Window", options=["Slow (Loose)", "Normal (Medium)", "Fast (Sharp)"], value="Normal (Medium)")
     with col2:
         intensity = st.slider("Match Intensity (Aggressiveness %)", min_value=10, max_value=100, value=70, step=5)
     
-    output_trim = st.slider("Output Trim (Fine-tune Gain in dB)", min_value=-3.0, max_value=3.0, value=1.2, step=0.1)
+    output_trim = st.slider("Output Trim (Fine-tune Gain in dB)", min_value=-3.0, max_value=3.0, value=0.5, step=0.1)
 
 if ref_upload and target_upload:
     if st.button("⚡ Process and Match Volumes", type="primary"):
-        with st.spinner("Analyzing human factor dynamics and processing audio..."):
+        with st.spinner("Analyzing syllable structures and generating crossfades..."):
             try:
                 output_audio, sample_rate, times, rms_ref, rms_target, gain_curve, final_speed, final_intensity, m_ref, m_tgt, m_out = analyze_and_match_vocal(
                     ref_upload, target_upload, fader_speed, intensity, output_trim, auto_mode
@@ -214,7 +197,7 @@ if ref_upload and target_upload:
                 st.success("✓ Audio successfully leveled!")
                 
                 if auto_mode:
-                    st.code(f"AI Song Analysis Completed:\n -> Automatically selected fader mode: {final_speed}\n -> Calculated safe match intensity: {final_intensity}%")
+                    st.code(f"AI Song Analysis Completed:\n -> Mode selected: {final_speed}\n -> Applied match intensity: {final_intensity}%")
                 
                 # REPOSITIONED AND RENAMED PROFESSIONAL R128 TABLE
                 st.subheader("📊 Loudness Analysis (EBU R128 Standard)")
