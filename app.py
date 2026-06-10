@@ -241,7 +241,7 @@ auto_mode = st.toggle("🧠 Smart Auto-Analyze (Recommended)", value=True)
 
 if auto_mode:
     st.info("💡 **Smart Auto-Mode is ACTIVE.** Recommended settings are applied automatically.")
-    st.caption("Auto mode je navrženo tak, aby fungovalo bez nutného dolaďování. Pokročilé volby jsou níže.")
+    st.caption("Auto mode is designed to work without extra tuning. Advanced options are below.")
     fader_speed = "Auto"
 else:
     st.warning("🎚️ **Manual Control Mode Active.**")
@@ -262,12 +262,12 @@ else:
             help="Jemná úprava celkové úrovně výstupu."
         )
 
-with st.expander("Pokročilé nastavení (volitelné)"):
+with st.expander("Advanced settings (optional)"):
     smoothing_mode = st.selectbox(
         "Smoothing Mode",
         options=["Smooth", "Balanced", "Sharp"],
         index=1,
-        help="Smooth = jemnější reakce, Sharp = rychlejší adaptace, Balanced = přirozená střední cesta."
+        help="Smooth = gentler response, Sharp = faster adaptation, Balanced = natural middle ground."
     )
 
     intensity = st.slider(
@@ -276,9 +276,9 @@ with st.expander("Pokročilé nastavení (volitelné)"):
         max_value=120,
         value=70,
         step=5,
-        help="Levá strana = přirozenější, pravá strana = více korekce."
+        help="Left = more natural, right = stronger matching."
     )
-    st.caption("⬅️ Méně korekce / Plynulejší zvuk — Více korekce ➡️")
+    st.caption("⬅️ Less correction / smoother sound — More correction ➡️")
 
     onset_sensitivity = st.slider(
         "Onset Sensitivity",
@@ -286,9 +286,9 @@ with st.expander("Pokročilé nastavení (volitelné)"):
         max_value=1.0,
         value=0.5,
         step=0.05,
-        help="Levá strana = pomalejší reakce, pravá strana = rychlejší reakce na krátké slabiky."
+        help="Left = slower response, right = faster reaction to short syllables."
     )
-    st.caption("⬅️ Pomalejší, méně citlivé — Rychlejší, více přizpůsobivé ➡️")
+    st.caption("⬅️ Slower, less sensitive — Faster, more adaptive ➡️")
 
     output_trim = st.slider(
         "Output Trim (Fine-tune Gain in dB)",
