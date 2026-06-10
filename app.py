@@ -137,7 +137,9 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
         smoothed_micro_db[i] = smoothed_micro_db[i-1] + alpha * diff
 
     # Combined target: phrase flow plus micro-syllable correction and onset sensitivity
-    pure_gain_db = (0.55 * macro_diff_db) + (0.45 * smoothed_micro_db)
+    macro_weight = np.clip(0.65 - 0.25 * onset_norm, 0.35, 0.65)
+    micro_weight = 1.0 - macro_weight
+    pure_gain_db = (macro_weight * macro_diff_db) + (micro_weight * smoothed_micro_db)
     pure_gain_db = np.clip(pure_gain_db, -7.0, 4.5)
 
     # Scale correction by intensity in dB space
@@ -170,16 +172,18 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
         rms_target_micro
     )
 
-    active_mask = np.zeros(len(y_ref), dtype=bool)
-    gate_open = False
+    gate_state = False
+    gate_values = np.zeros(len(y_ref), dtype=float)
     for i in range(len(y_ref)):
         if rms_ref_samples[i] >= silence_threshold_on or rms_target_samples[i] >= silence_threshold_on:
-            gate_open = True
+            gate_state = True
         elif rms_ref_samples[i] < silence_threshold_off and rms_target_samples[i] < silence_threshold_off:
-            gate_open = False
-        active_mask[i] = gate_open
+            gate_state = False
+        gate_values[i] = 1.0 if gate_state else 0.0
 
-    y_modulated[~active_mask] = 0
+    gate_envelope = gaussian_filter1d(gate_values, sigma=16)
+    gate_envelope = np.clip(gate_envelope, 0.0, 1.0)
+    y_modulated *= gate_envelope
 
     # Global Energy Trim Match to center the mix perfectly
     rms_global_ref = np.sqrt(np.mean(y_ref**2))
