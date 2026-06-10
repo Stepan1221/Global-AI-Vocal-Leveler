@@ -24,53 +24,6 @@ def calculate_metrics(y, sr):
         "Peak (Maximum)": f"{peak_db:.1f} dB"
     }
 
-def generate_protools_text_automation(gain_curve, sr, hop_length, track_name="AI_Vocal_Fix"):
-    """
-    Generuje stoprocentně validní textový soubor kompatibilní s Pro Tools 'Import Session Data'.
-    Obsahuje kompletní povinnou hlavičku relace, bez které Pro Tools soubor odmítne otevřít.
-    """
-    time_per_frame = hop_length / sr
-    lines = []
-    
-    # 1. POVINNÁ HLAVIČKA RELACE (Bez tohoto Pro Tools hází chybu a soubor neotevře)
-    lines.append("SESSION NAME:\tAI Vocal Leveler Session")
-    lines.append("SAMPLE RATE:\t48000.000000")
-    lines.append("BIT DEPTH:\t24-bit")
-    lines.append("TIMECODE FORMAT:\t25.00 Frame")
-    lines.append("TRACK COUNT:\t1")
-    lines.append("\n" + "="*80 + "\n")
-    
-    # 2. DEFINICE STOPY
-    lines.append(f"TRACK NAME:\t{track_name}")
-    lines.append("COMMENTS:\tAI Vocal Leveler Generated Automation")
-    lines.append("PLUG-INS:\t")
-    lines.append("\nVOLUME AUTOMATION PLAYLIST:")
-    
-    # 3. GENEROVÁNÍ JEDNOTLIVÝCH BODŮ KŘIVKY
-    for i, g_val in enumerate(gain_curve):
-        time_in_seconds = i * time_per_frame
-        
-        # Bezpečné mapování gain faktoru na Pro Tools dB fader scale
-        if g_val < 0.45:
-            db_val = -60.0
-        else:
-            db_val = 20 * np.log10(g_val)
-            if db_val > 6.0: 
-                db_val = 6.0
-                
-        # Pro Tools vyžaduje striktní formát Timecodu (Hodiny:Minuty:Sekundy:Snímky)
-        # Pro zjednodušení a přesnost použijeme formát stopáže, který Pro Tools umí spočítat:
-        mins = int(time_in_seconds // 60)
-        secs = int(time_in_seconds % 60)
-        # Přepočet milisekund na frames (při 25 fps je 1 frame = 40 ms)
-        frames = int((time_in_seconds - int(time_in_seconds)) * 25)
-        
-        time_str = f"00:{mins:02d}:{secs:02d}:{frames:02d}"
-        lines.append(f"\t{time_str}\t{db_val:.2f}")
-        
-    lines.append("\n" + "="*80 + "\n")
-    return "\n".join(lines)
-
 def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensity=70, output_trim=1.2, auto_mode=True):
     # 1. Load Audio Files
     y_ref, sr = librosa.load(ref_file, sr=None)
@@ -170,7 +123,7 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
         gain_curve
     )
     
-    # A. Process Target Audio
+    # Process Target Audio
     y_modulated = y_target * gain_samples * final_global_gain
     
     # Safety Logic for Silence
@@ -185,9 +138,6 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
     max_val = np.max(np.abs(y_modulated))
     if max_val > 0.99:
         y_modulated = y_modulated / max_val * 0.99
-        
-    # B. Generate Pro Tools Text Automation Data
-    pt_text_data = generate_protools_text_automation(gain_curve, sr, hop_length)
 
     times = librosa.times_like(rms_ref_smooth, sr=sr, hop_length=hop_length)
     
@@ -195,7 +145,7 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
     metrics_target = calculate_metrics(y_target, sr)
     metrics_out = calculate_metrics(y_modulated, sr)
     
-    return y_modulated, pt_text_data, sr, times, rms_ref_smooth, rms_target_smooth, gain_curve, fader_speed, intensity, metrics_ref, metrics_target, metrics_out
+    return y_modulated, sr, times, rms_ref_smooth, rms_target_smooth, gain_curve, fader_speed, intensity, metrics_ref, metrics_target, metrics_out
 
 # --- WEB INTERFACE ---
 st.set_page_config(page_title="AI Vocal Leveler", page_icon="🎤", layout="centered")
@@ -231,16 +181,12 @@ if ref_upload and target_upload:
     if st.button("⚡ Process and Match Volumes", type="primary"):
         with st.spinner("Analyzing human factor dynamics and processing audio..."):
             try:
-                output_audio, pt_text_data, sample_rate, times, rms_ref, rms_target, gain_curve, final_speed, final_intensity, m_ref, m_tgt, m_out = analyze_and_match_vocal(
+                output_audio, sample_rate, times, rms_ref, rms_target, gain_curve, final_speed, final_intensity, m_ref, m_tgt, m_out = analyze_and_match_vocal(
                     ref_upload, target_upload, fader_speed, intensity, output_trim, auto_mode
                 )
                 
                 output_fn = "leveled_target_vocal.wav"
-                text_fn = "protools_volume_automation.txt"
-                
                 sf.write(output_fn, output_audio, sample_rate)
-                with open(text_fn, "w", encoding="utf-8") as f:
-                    f.write(pt_text_data)
                 
                 st.success("✓ Audio successfully leveled!")
                 
@@ -285,37 +231,20 @@ if ref_upload and target_upload:
                 
                 # DOWNLOAD SECTION
                 st.write("---")
-                st.subheader("💾 Download Options")
+                st.subheader("💾 Download Leveled Output")
+                st.caption("Pre-rendered and fully leveled WAV file ready for the mix. Import this directly back into Pro Tools.")
                 
-                col1, col2 = st.columns(2)
-    
-                with col1:
-                    st.write("🟢 **Scenario A: Ideal Output**")
-                    st.caption("Pre-rendered and fully leveled WAV file ready for the mix.")
-                    st.audio(output_fn, format="audio/wav")
-                    with open(output_fn, "rb") as file:
-                        st.download_button(
-                            label="🚀 Download Leveled Vocal WAV",
-                            data=file,
-                            file_name="leveled_target_vocal.wav",
-                            mime="audio/wav",
-                            use_container_width=True
-                        )
-                        
-                with col2:
-                    st.write("🔵 **Scenario B: Pro Tools Automation Import**")
-                    st.caption("Pure volume curve data format. Import this directly onto your audio track in Pro Tools.")
-                    with open(text_fn, "rb") as file:
-                        st.download_button(
-                            label="🎛️ Download Pro Tools Track Automation (.txt)",
-                            data=file,
-                            file_name="protools_volume_automation.txt",
-                            mime="text/plain",
-                            use_container_width=True
-                        )
+                st.audio(output_fn, format="audio/wav")
+                with open(output_fn, "rb") as file:
+                    st.download_button(
+                        label="🚀 Download Leveled Vocal WAV",
+                        data=file,
+                        file_name="leveled_target_vocal.wav",
+                        mime="audio/wav",
+                        use_container_width=True
+                    )
                 
                 os.remove(output_fn)
-                os.remove(text_fn)
                 
             except Exception as e:
                 st.error(f"An error occurred during processing: {e}")
