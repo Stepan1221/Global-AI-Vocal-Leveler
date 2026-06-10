@@ -72,22 +72,22 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
     num_frames = len(rms_ref)
     
     # 2. ADVANCED SYLLABLE & PHRASE SMOOTHING (Dual-Stage Window)
-    # Fast tracking window for catch-up on hot syllables, ultra-wide window for natural crossfades
+    # Fast tracking window for catch-up on hot syllables, wide window for natural crossfades
     if auto_mode:
-        fast_sigma = 25.0    # Fast enough to catch a single heavy syllable
-        phrase_sigma = 140.0  # Wide enough to act as a 1-second smooth crossfade across the word
+        fast_sigma = 12.0    # Fast enough to keep first syllables alive
+        phrase_sigma = 95.0  # Smooth phrase motion while avoiding over-smearing
         intensity_factor = intensity / 100.0
         fader_speed = "AI Syllable Leveler + Smart Crossfade"
     else:
         if fader_speed == "Fast (Sharp)":
-            fast_sigma = 15.0
-            phrase_sigma = 90.0
+            fast_sigma = 8.0
+            phrase_sigma = 55.0
         elif fader_speed == "Normal (Medium)":
-            fast_sigma = 25.0
-            phrase_sigma = 140.0
+            fast_sigma = 14.0
+            phrase_sigma = 95.0
         elif fader_speed == "Slow (Loose)":
-            fast_sigma = 40.0
-            phrase_sigma = 200.0
+            fast_sigma = 24.0
+            phrase_sigma = 140.0
         intensity_factor = intensity / 100.0
 
     # Calculate phrase level trends and transient syllable spikes
@@ -97,22 +97,40 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
     rms_ref_micro = gaussian_filter1d(rms_ref, sigma=fast_sigma)
     rms_target_micro = gaussian_filter1d(rms_target, sigma=fast_sigma)
     
-    # Combined target: prioritizes phrase flow, but injects micro-fixes for runaway syllables
+    # Spectral flux / onset sensitivity for faster language-independent transient response
+    onset_strength_ref = librosa.onset.onset_strength(y=y_ref_norm, sr=sr, hop_length=hop_length)
+    onset_strength_tgt = librosa.onset.onset_strength(y=y_target_norm, sr=sr, hop_length=hop_length)
+
+    if len(onset_strength_ref) < num_frames:
+        onset_strength_ref = np.pad(onset_strength_ref, (0, num_frames - len(onset_strength_ref)), mode="constant")
+    else:
+        onset_strength_ref = onset_strength_ref[:num_frames]
+
+    if len(onset_strength_tgt) < num_frames:
+        onset_strength_tgt = np.pad(onset_strength_tgt, (0, num_frames - len(onset_strength_tgt)), mode="constant")
+    else:
+        onset_strength_tgt = onset_strength_tgt[:num_frames]
+
+    onset_combined = (onset_strength_ref + onset_strength_tgt) * 0.5
+    onset_norm = onset_combined / (np.max(onset_combined) + 1e-6)
+    onset_boost = 1.0 + 0.35 * onset_norm
+
+    # Combined target: phrase flow plus micro-syllable correction and onset sensitivity
     epsilon = 1e-3
     macro_gain = (rms_ref_macro + epsilon) / (rms_target_macro + epsilon)
-    micro_gain = (rms_ref_micro + epsilon) / (rms_target_micro + epsilon)
+    micro_gain = ((rms_ref_micro + epsilon) / (rms_target_micro + epsilon)) * onset_boost
     
-    # Weighted integration: 65% phrase matching, 35% localized syllable correction
-    pure_gain_curve = (0.65 * macro_gain) + (0.35 * micro_gain)
+    # Weighted integration: equal emphasis on phrase and local syllable behavior
+    pure_gain_curve = (0.5 * macro_gain) + (0.5 * micro_gain)
     
-    # Strict safety boundaries mimicking a cautious mixing engineer (-7 dB to +4.5 dB)
-    pure_gain_curve = np.clip(pure_gain_curve, 0.45, 1.68) 
+    # Safety boundaries mimicking a cautious mixing engineer (-7 dB to +4.5 dB)
+    pure_gain_curve = np.clip(pure_gain_curve, 0.45, 1.68)
     
     # Apply intensity curve scaling
     gain_curve = 1.0 + intensity_factor * (pure_gain_curve - 1.0)
     
-    # Crucial step: Post-smoothing the fader movements to create automatic crossfades between syllable changes
-    gain_curve = gaussian_filter1d(gain_curve, sigma=35)
+    # Post-smoothing the fader movements just enough to preserve quick syllables
+    gain_curve = gaussian_filter1d(gain_curve, sigma=12)
     
     gain_samples = np.interp(
         np.arange(len(y_target)), 
@@ -124,11 +142,11 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
     y_modulated = y_target * gain_samples
     
     # Natural Gating for Silence & Breaths (avoids noise-floor pump)
-    silence_threshold = 0.008
+    silence_threshold = 0.004
     rms_ref_samples = np.interp(
         np.arange(len(y_ref)),
-        np.arange(len(rms_ref_macro)) * hop_length,
-        rms_ref_macro
+        np.arange(len(rms_ref_micro)) * hop_length,
+        rms_ref_micro
     )
     y_modulated[rms_ref_samples < silence_threshold] = 0
     
