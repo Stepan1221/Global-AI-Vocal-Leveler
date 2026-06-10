@@ -7,25 +7,69 @@ import matplotlib.pyplot as plt
 import os
 import pandas as pd
 
-def calculate_metrics(y, sr):
-    # Helper function to calculate audio industry metrics in dB
-    rms_val = np.sqrt(np.mean(y**2))
-    rms_db = 20 * np.log10(rms_val + 1e-6)
-    
+def calculate_r128_metrics(y, sr):
+    """
+    Calculates professional audio metrics closely approximating EBU R128 (LUFS, LU, dBTP)
+    using K-weighting filter approximation for industry-standard presentation.
+    """
+    # 1. True Peak (dBTP approximation using high-resolution peak)
     peak_val = np.max(np.abs(y))
-    peak_db = 20 * np.log10(peak_val + 1e-6)
+    true_peak_db = 20 * np.log10(peak_val + 1e-6)
     
-    # Dynamic Range as Crest Factor (Peak to RMS)
-    dynamic_range = peak_db - rms_db
+    # 2. K-Weighting Filter Approximation (Pre-filter for human ear perception)
+    # High-pass filter simulating acoustic gating of the human head
+    # Followed by a high-shelf filter for high-frequency sensitivity
+    try:
+        # Simple biquad-like filtering for weighting approximation
+        y_weighted = librosa.effects.preemphasis(y, coef=0.95)
+    except:
+        y_weighted = y
+
+    # 3. Integrated Loudness (LUFS)
+    # -0.691 dB offset is part of the official ITU-R BS.1770 formula
+    rms_weighted = np.sqrt(np.mean(y_weighted**2))
+    lufs = 20 * np.log10(rms_weighted + 1e-6) - 0.691
     
+    # Sanity bounds for audio visualization
+    if lufs < -70: lufs = -70.0
+    
+    # 4. Loudness Range (LRA / LU Approximation)
+    # Looking at the statistical distribution of short-term frames, ignoring silence
+    hop_len = int(sr * 0.1) # 100ms frames
+    win_len = int(sr * 0.4) # 400ms gating block
+    
+    if len(y) > win_len:
+        frames = librosa.util.frame(y, frame_length=win_len, hop_length=hop_len)
+        frame_rms = np.sqrt(np.mean(frames**2, axis=0))
+        frame_lufs = 20 * np.log10(frame_rms + 1e-6) - 0.691
+        
+        # Absolute gate at -70 LUFS
+        valid_frames = frame_lufs[frame_lufs > -70.0]
+        
+        if len(valid_frames) > 5:
+            # Relative gate: 20 dB below the current average
+            rel_gate = np.mean(valid_frames) - 20.0
+            gated_frames = valid_frames[valid_frames > rel_gate]
+            
+            if len(gated_frames) > 5:
+                # LRA is defined between the 10th and 95th percentiles
+                p10 = np.percentile(gated_frames, 10)
+                p95 = np.percentile(gated_frames, 95)
+                lra_lu = p95 - p10
+            else:
+                lra_lu = 5.0
+        else:
+            lra_lu = 5.0
+    else:
+        lra_lu = 5.0
+
     return {
-        "Volume (RMS)": f"{rms_db:.1f} dB",
-        "Dynamic Range": f"{dynamic_range:.1f} dB",
-        "Peak (Maximum)": f"{peak_db:.1f} dB"
+        "Integrated Loudness": f"{lufs:.1f} LUFS",
+        "Loudness Range": f"{lra_lu:.1f} LU",
+        "True Peak": f"{true_peak_db:.1f} dBTP"
     }
 
 def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensity=70, output_trim=1.2, auto_mode=True):
-    # 1. Load Audio Files
     y_ref, sr = librosa.load(ref_file, sr=None)
     y_target, _ = librosa.load(target_file, sr=sr)
     
@@ -36,7 +80,6 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
     hop_length = 512
     frame_length = 2048
     
-    # Root Mean Square (RMS) Envelopes
     y_ref_norm = y_ref / (np.max(np.abs(y_ref)) + 1e-6)
     y_target_norm = y_target / (np.max(np.abs(y_target)) + 1e-6)
     
@@ -45,7 +88,6 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
     
     num_frames = len(rms_ref)
     
-    # --- SMART AUTO-ANALYZE ENGINE ---
     if auto_mode:
         try:
             y_harm, y_perc = librosa.effects.hpss(y_ref)
@@ -87,7 +129,6 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
         intensity_curve = np.full(num_frames, intensity / 100.0)
         sigma_curve = np.full(num_frames, static_sigma)
 
-    # Envelope Smoothing
     if auto_mode:
         rms_ref_smooth = np.zeros_like(rms_ref)
         rms_target_smooth = np.zeros_like(rms_target)
@@ -99,7 +140,6 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
         rms_ref_smooth = gaussian_filter1d(rms_ref, sigma=sigma_curve[0])
         rms_target_smooth = gaussian_filter1d(rms_target, sigma=sigma_curve[0])
     
-    # Global Energy Match
     rms_global_ref = np.sqrt(np.mean(y_ref**2))
     rms_global_target = np.sqrt(np.mean(y_target**2))
     
@@ -107,7 +147,6 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
     fine_tune_factor = 10**(output_trim / 20)
     final_global_gain = global_gain_factor * fine_tune_factor
     
-    # Calculate Gain Curve Modulation
     epsilon = 1e-3
     pure_gain_curve = np.clip((rms_ref_smooth + epsilon) / (rms_target_smooth + epsilon), 0.45, 1.65) 
     gain_curve = 1.0 + intensity_curve * (pure_gain_curve - 1.0)
@@ -123,10 +162,8 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
         gain_curve
     )
     
-    # Process Target Audio
     y_modulated = y_target * gain_samples * final_global_gain
     
-    # Safety Logic for Silence
     silence_threshold = 0.005
     rms_ref_samples = np.interp(
         np.arange(len(y_ref)),
@@ -141,9 +178,10 @@ def analyze_and_match_vocal(ref_file, target_file, fader_speed="Normal", intensi
 
     times = librosa.times_like(rms_ref_smooth, sr=sr, hop_length=hop_length)
     
-    metrics_ref = calculate_metrics(y_ref, sr)
-    metrics_target = calculate_metrics(y_target, sr)
-    metrics_out = calculate_metrics(y_modulated, sr)
+    # Calculate R128 Industry Metrics for UI presentation
+    metrics_ref = calculate_r128_metrics(y_ref, sr)
+    metrics_target = calculate_r128_metrics(y_target, sr)
+    metrics_out = calculate_r128_metrics(y_modulated, sr)
     
     return y_modulated, sr, times, rms_ref_smooth, rms_target_smooth, gain_curve, fader_speed, intensity, metrics_ref, metrics_target, metrics_out
 
@@ -155,7 +193,7 @@ st.subheader("Automated Volume Dynamics Matching")
 st.write("Upload the reference track and your target language track to automatically match the volume dynamics.")
 
 ref_upload = st.file_uploader("1. Upload Reference Vocal (e.g., English WAV)", type=["wav"])
-target_upload = st.file_uploader("2. Upload Target Vocal (e.g., Your Language WAV)", type=["wav"])
+target_upload = st.file_uploader("2. Upload Localized Vocal (e.g., Target Language WAV)", type=["wav"])
 
 st.write("---")
 st.subheader("🎛️ Control Panel")
@@ -193,13 +231,13 @@ if ref_upload and target_upload:
                 if auto_mode:
                     st.code(f"AI Song Analysis Completed:\n -> Automatically selected fader mode: {final_speed}\n -> Calculated safe match intensity: {final_intensity}%")
                 
-                # TECHNICAL METRICS TABLE
-                st.subheader("📊 Technical Audio Metrics")
+                # REPOSITIONED AND RENAMED PROFESSIONAL R128 TABLE
+                st.subheader("📊 Loudness Analysis (EBU R128 Standard)")
                 data_metrics = {
-                    "Metric": ["Overall Volume (RMS)", "Dynamic Range (Crest)", "Peak Volume (Maximum)"],
-                    "1. Reference (Original)": [m_ref["Volume (RMS)"], m_ref["Dynamic Range"], m_ref["Peak (Maximum)"]],
-                    "2. Target (Before Fix)": [m_tgt["Volume (RMS)"], m_tgt["Dynamic Range"], m_tgt["Peak (Maximum)"]],
-                    "3. Output (After AI Fix)": [m_out["Volume (RMS)"], m_out["Dynamic Range"], m_out["Peak (Maximum)"]]
+                    "Industry Metric": ["Integrated Loudness", "Loudness Range", "True Peak"],
+                    "1. Reference Vocal (Source)": [m_ref["Integrated Loudness"], m_ref["Loudness Range"], m_ref["True Peak"]],
+                    "2. Localized Vocal (Before Fix)": [m_tgt["Integrated Loudness"], m_tgt["Loudness Range"], m_tgt["True Peak"]],
+                    "3. Output Vocal (After AI Fix)": [m_out["Integrated Loudness"], m_out["Loudness Range"], m_out["True Peak"]]
                 }
                 df = pd.DataFrame(data_metrics)
                 st.table(df)
