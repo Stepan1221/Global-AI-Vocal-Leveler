@@ -56,7 +56,7 @@ def calculate_r128_metrics(y, sr):
 def analyze_and_match_vocal(
     ref_file,
     target_file,
-    intensity=70,
+    intensity=55,
     onset_sensitivity=0.5,
     smoothing_mode="Balanced",
 ):
@@ -292,8 +292,7 @@ def analyze_and_match_vocal(
 
 # --- WEB INTERFACE ---
 st.set_page_config(page_title="AI Vocal Leveler", page_icon="🎤", layout="centered")
-
-st.title("🎤 AI Vocal Leveler ✅ CONNECTED TEST")
+st.title("🎤 AI Vocal Leveler")
 st.subheader("Automated Volume Dynamics Matching")
 st.write(
     "Upload the reference track and your target language track to automatically match the volume dynamics."
@@ -307,54 +306,9 @@ target_upload = st.file_uploader(
 )
 
 st.write("---")
-st.subheader("🎛️ Control Panel")
+st.subheader("🚀 Automatic Processing")
 
-if "smoothing_mode" not in st.session_state:
-    st.session_state.smoothing_mode = "Balanced"
-if "intensity" not in st.session_state:
-    st.session_state.intensity = 55
-if "onset_sensitivity" not in st.session_state:
-    st.session_state.onset_sensitivity = 0.5
-
-st.info(
-    "💡 **Smart Auto Analyzer is always active.** The app works automatically in the background."
-)
-st.caption("Use advanced options only if you want to change behavior manually.")
-
-with st.expander("Advanced settings (optional)"):
-    smoothing_mode = st.selectbox(
-        "Smoothing Mode",
-        options=["Smooth", "Balanced", "Sharp"],
-        key="smoothing_mode",
-        help="Smooth = gentler response, Sharp = faster adaptation, Balanced = natural middle ground.",
-    )
-
-    intensity = st.slider(
-        "Match Intensity (Aggressiveness %)",
-        min_value=10,
-        max_value=120,
-        key="intensity",
-        step=5,
-        help="Left = more natural, right = stronger matching.",
-    )
-    st.caption("⬅️ Less correction / smoother sound — More correction ➡️")
-
-    onset_sensitivity = st.slider(
-        "Onset Sensitivity",
-        min_value=0.0,
-        max_value=1.0,
-        key="onset_sensitivity",
-        step=0.05,
-        help="Left = slower response, right = faster reaction to short syllables.",
-    )
-    st.caption("⬅️ Slower, less sensitive — Faster, more adaptive ➡️")
-
-    def reset_defaults():
-        st.session_state["smoothing_mode"] = "Balanced"
-        st.session_state["intensity"] = 55
-        st.session_state["onset_sensitivity"] = 0.5
-
-    st.button("Reset defaults", key="reset_defaults_button", on_click=reset_defaults)
+st.info("💡 Upload files and click process.")
 
 if ref_upload and target_upload:
     if st.button("⚡ Process and Match Volumes", type="primary"):
@@ -375,9 +329,9 @@ if ref_upload and target_upload:
                 ) = analyze_and_match_vocal(
                     ref_upload,
                     target_upload,
-                    intensity,
-                    onset_sensitivity,
-                    smoothing_mode,
+                    55,
+                    0.5,
+                    "Balanced",
                 )
                 output_fn = "leveled_target_vocal.wav"
                 sf.write(output_fn, output_audio, sample_rate)
