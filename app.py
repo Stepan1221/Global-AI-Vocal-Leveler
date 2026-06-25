@@ -7,62 +7,66 @@ import matplotlib.pyplot as plt
 import os
 import pandas as pd
 
+import pyloudnorm as pyln
+
 
 def calculate_r128_metrics(y, sr):
-    """
-    Calculates audio metrics calibrated to match standard DAW LUFS meters.
-    Uses clean RMS energy with an ITU-R calibrated offset to ensure accuracy.
-    """
-    peak_val = np.max(np.abs(y))
-    true_peak_db = 20 * np.log10(peak_val + 1e-6)
+    try:
+        y = y.astype("float32")
 
-    rms_val = np.sqrt(np.mean(y**2))
-    lufs = 20 * np.log10(rms_val + 1e-6) + 1.6
+        meter = pyln.Meter(sr)
 
-    if lufs < -70:
-        lufs = -70.0
+        loudness = meter.integrated_loudness(y)
+        loudness_range = meter.loudness_range(y)
 
-    hop_len = int(sr * 0.1)
-    win_len = int(sr * 0.4)
+        peak_val = np.max(np.abs(y))
+        true_peak = 20 * np.log10(peak_val + 1e-9)
 
-    if len(y) > win_len:
-        frames = librosa.util.frame(y, frame_length=win_len, hop_length=hop_len)
-        frame_rms = np.sqrt(np.mean(frames**2, axis=0))
-        frame_lufs = 20 * np.log10(frame_rms + 1e-6) + 1.6
+        return {
+            "Integrated Loudness": f"{loudness:.1f} LUFS",
+            "Loudness Range": f"{loudness_range:.1f} LU",
+            "True Peak": f"{true_peak:.1f} dBTP",
+        }
 
-        valid_frames = frame_lufs[frame_lufs > -70.0]
-        if len(valid_frames) > 5:
-            rel_gate = np.mean(valid_frames) - 15.0
-            gated_frames = valid_frames[valid_frames > rel_gate]
-
-            if len(gated_frames) > 5:
-                p10 = np.percentile(gated_frames, 10)
-                p95 = np.percentile(gated_frames, 95)
-                lra_lu = p95 - p10
-            else:
-                lra_lu = 8.5
-        else:
-            lra_lu = 8.5
-    else:
-        lra_lu = 8.5
-
-    return {
-        "Integrated Loudness": f"{lufs:.1f} LUFS",
-        "Loudness Range": f"{lra_lu:.1f} LU",
-        "True Peak": f"{true_peak_db:.1f} dBTP",
-    }
+    except Exception:
+        return {
+            "Integrated Loudness": "Error",
+            "Loudness Range": "Error",
+            "True Peak": "Error",
+        }
 
 
 def analyze_and_match_vocal(
     ref_file,
     target_file,
-    intensity=55,
+    intensity=50,
     onset_sensitivity=0.5,
     smoothing_mode="Balanced",
 ):
     # 1. Load Audio Files
     y_ref, sr = librosa.load(ref_file, sr=None)
     y_target, _ = librosa.load(target_file, sr=sr)
+
+    # --- Adaptive LUFS Pre-Gain Alignment ---
+    meter = pyln.Meter(sr)
+
+    lufs_ref = meter.integrated_loudness(y_ref.astype("float32"))
+    lufs_target = meter.integrated_loudness(y_target.astype("float32"))
+
+    lufs_diff = lufs_ref - lufs_target
+
+    # adaptivní faktor podle rozdílu
+    if abs(lufs_diff) > 8:
+        factor = 0.85
+    elif abs(lufs_diff) > 4:
+        factor = 0.70
+    else:
+        factor = 0.50
+
+    pre_gain_db = lufs_diff * factor
+    pre_gain = 10 ** (pre_gain_db / 20.0)
+
+    y_target = y_target * pre_gain
 
     max_len = max(len(y_ref), len(y_target))
     y_ref = librosa.util.fix_length(y_ref, size=max_len)
@@ -173,7 +177,7 @@ def analyze_and_match_vocal(
     macro_weight = np.clip(0.75 - 0.25 * onset_norm * onset_gain, 0.35, 0.75)
     micro_weight = 1.0 - macro_weight
     pure_gain_db = (macro_weight * macro_diff_db) + (micro_weight * smoothed_micro_db)
-    pure_gain_db = np.clip(pure_gain_db, -6.0, 4.0)
+    pure_gain_db = np.clip(pure_gain_db, -6.0, 6.0)
 
     # Scale correction by intensity in dB space, but keep core phrase shape natural
     gain_db = intensity_factor * pure_gain_db
@@ -258,11 +262,18 @@ def analyze_and_match_vocal(
     y_modulated *= gate_envelope
 
     # Global Energy Trim Match to center the mix perfectly
-    rms_global_ref = np.sqrt(np.mean(y_ref**2))
-    rms_global_out = np.sqrt(np.mean(y_modulated**2))
-    global_rebalance = rms_global_ref / (rms_global_out + 1e-6)
+    meter = pyln.Meter(sr)
 
-    y_modulated = y_modulated * global_rebalance
+    lufs_ref = meter.integrated_loudness(y_ref.astype("float32"))
+    lufs_out = meter.integrated_loudness(y_modulated.astype("float32"))
+
+    lufs_diff = lufs_ref - lufs_out
+
+    # jemný stabilizační rebalance (např 70%)
+    rebalance_gain_db = lufs_diff * 0.7
+    rebalance_gain = 10 ** (rebalance_gain_db / 20.0)
+
+    y_modulated = y_modulated * rebalance_gain
 
     # Final Brickwall Safety Ceiling
     max_val = np.max(np.abs(y_modulated))
