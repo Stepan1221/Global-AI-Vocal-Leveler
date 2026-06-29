@@ -19,7 +19,13 @@ def calculate_r128_metrics(y, sr):
         loudness = meter.integrated_loudness(y)
         loudness_range = meter.loudness_range(y)
 
-        peak_val = np.max(np.abs(y))
+        # --- Approximate True Peak (oversampling x4) ---
+        upsample_factor = 4
+        y_upsampled = np.interp(
+            np.linspace(0, len(y), len(y) * upsample_factor), np.arange(len(y)), y
+        )
+
+        peak_val = np.max(np.abs(y_upsampled))
         true_peak = 20 * np.log10(peak_val + 1e-9)
 
         return {
