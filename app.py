@@ -281,48 +281,28 @@ def analyze_and_match_vocal(
 
     y_modulated = y_modulated * rebalance_gain
 
-    # --- Selective Micro-Peak Leveling (transparent) ---
+    # --- Frame-based Selective Micro-Peak Leveling (SAFE) ---
 
-    # target peak z reference (true peak)
-    upsample_factor = 2
-    y_ref_up = np.interp(
-        np.linspace(0, len(y_modulated) - 1, len(y_modulated) * upsample_factor),
-        np.arange(len(y_ref)),
-        y_ref,
-    )
-    target_peak = np.max(np.abs(y_ref_up))
+    target_peak = np.max(np.abs(y_ref))
 
-    # oversample output
-    y_mod_up = np.interp(
-        np.linspace(0, len(y_modulated), len(y_modulated) * upsample_factor),
-        np.arange(len(y_modulated)),
-        y_modulated,
+    frame_peaks = np.array(
+        [
+            np.max(np.abs(y_modulated[i : i + frame_length]))
+            for i in range(0, len(y_modulated), hop_length)
+        ]
     )
 
-    # detekce peaků nad target
-    mask = y_mod_up > target_peak
-    mask |= y_mod_up < -target_peak  # i negativní špičky
+    gain_reduction = np.clip(target_peak / (frame_peaks + 1e-9), 0.707, 1.0)
 
-    # jemná redukce (max -3 dB = ~0.707)
-    max_reduction = 0.707
+    gain_reduction = gaussian_filter1d(gain_reduction, sigma=2)
 
-    # vytvoření gain masky
-    gain_mask = np.ones_like(y_mod_up)
-    gain_mask[mask] = np.clip(
-        target_peak / (np.abs(y_mod_up[mask]) + 1e-9), max_reduction, 1.0
-    )
-
-    # smoothing (aby nebyl pumping)
-    gain_mask = gaussian_filter1d(gain_mask, sigma=2)
-
-    # aplikace zpět na normální rozlišení
     gain_samples = np.interp(
         np.arange(len(y_modulated)),
-        np.linspace(0, len(y_modulated) - 1, len(gain_mask)),
-        gain_mask,
+        np.arange(len(gain_reduction)) * hop_length,
+        gain_reduction,
     )
 
-    y_modulated = y_modulated * gain_samples
+    y_modulated *= gain_samples
 
     times = librosa.times_like(rms_ref_macro, sr=sr, hop_length=hop_length)
 
