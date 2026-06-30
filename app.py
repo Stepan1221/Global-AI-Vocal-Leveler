@@ -281,10 +281,28 @@ def analyze_and_match_vocal(
 
     y_modulated = y_modulated * rebalance_gain
 
-    # Final Brickwall Safety Ceiling
-    max_val = np.max(np.abs(y_modulated))
-    if max_val > 0.98:
-        y_modulated = y_modulated / max_val * 0.98
+    # --- Gentle Peak Control (reference-based) ---
+    # cílový peak podle reference
+    target_peak_db = 20 * np.log10(np.max(np.abs(y_ref)) + 1e-9)
+
+    max_reduction_db = 3.0  # max zásah
+
+    # oversampled true peak (stejný jako metrika)
+    upsample_factor = 4
+    y_upsampled = np.interp(
+        np.linspace(0, len(y_modulated), len(y_modulated) * upsample_factor),
+        np.arange(len(y_modulated)),
+        y_modulated,
+    )
+
+    current_peak = 20 * np.log10(np.max(np.abs(y_upsampled)) + 1e-9)
+
+    peak_diff = current_peak - target_peak_db
+
+    if peak_diff > 0:
+        reduction_db = min(peak_diff, max_reduction_db)
+        gain = 10 ** (-reduction_db / 20.0)
+        y_modulated = y_modulated * gain
 
     times = librosa.times_like(rms_ref_macro, sr=sr, hop_length=hop_length)
 
