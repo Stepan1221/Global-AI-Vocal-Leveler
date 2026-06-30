@@ -436,43 +436,35 @@ apply_tonal = st.checkbox("🎛 Apply tonal matching (beta)")
 def apply_adaptive_hpf(y, sr):
     import numpy as np
     import librosa
-    from scipy.signal import butter, lfilter
-    from scipy.ndimage import gaussian_filter1d
 
+    n_fft = 2048
     hop_length = 256
-    frame_length = 1024
 
-    # RMS pro odhad energie
-    rms = librosa.feature.rms(y=y, frame_length=frame_length, hop_length=hop_length)[0]
+    stft = librosa.stft(y, n_fft=n_fft, hop_length=hop_length)
+    mag = np.abs(stft)
+    phase = np.angle(stft)
 
-    # normalize
-    rms_norm = rms / (np.max(rms) + 1e-6)
+    freqs = librosa.fft_frequencies(sr=sr, n_fft=n_fft)
 
-    # odhad cutoff (adaptivní)
-    # tichá místa → vyšší cutoff (víc čistit)
-    # hlasitá místa → nižší cutoff (chránit hlas)
-    cutoff = 60 + (1.0 - rms_norm) * 80  # cca 60–140 Hz
+    # --- odhad fundamentu (hrubý, ale funkční) ---
+    spectral_energy = np.mean(mag, axis=1)
 
-    # smoothing aby nebyly artefakty
-    cutoff = gaussian_filter1d(cutoff, sigma=3)
+    # vezmeme low band (do 300 Hz)
+    low_band = freqs < 300
 
-    # převod na sample domain
-    cutoff_samples = np.interp(
-        np.arange(len(y)), np.arange(len(cutoff)) * hop_length, cutoff
-    )
+    fundamental_idx = np.argmax(spectral_energy * low_band)
+    fundamental_freq = freqs[fundamental_idx]
 
-    # filtr po samplech
-    y_out = np.zeros_like(y)
+    # --- adaptive cutoff ---
+    cutoff_base = max(60, fundamental_freq * 0.8)
+    cutoff = min(cutoff_base, 200)  # hard ceiling
 
-    for i in range(len(y)):
-        fc = cutoff_samples[i]
+    # --- HARD CUT (brick) ---
+    mask = freqs >= cutoff
 
-        # jednoduchý 1st order HPF
-        alpha = fc / (fc + sr / (2 * np.pi))
-        if i == 0:
-            y_out[i] = y[i]
-        else:
-            y_out[i] = alpha * (y_out[i - 1] + y[i] - y[i - 1])
+    mag_filtered = mag * mask[:, np.newaxis]
+
+    y_out = librosa.istft(mag_filtered * np.exp(1j * phase), hop_length=hop_length)
 
     return y_out
 
