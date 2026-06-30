@@ -76,6 +76,9 @@ def analyze_and_match_vocal(
 
     y_target = y_target * pre_gain
 
+    # --- Adaptive HPF cleanup ---
+    y_target = apply
+
     max_len = max(len(y_ref), len(y_target))
     y_ref = librosa.util.fix_length(y_ref, size=max_len)
     y_target = librosa.util.fix_length(y_target, size=max_len)
@@ -426,6 +429,51 @@ st.write("---")
 st.subheader("🚀 Automatic Processing")
 
 apply_tonal = st.checkbox("🎛 Apply tonal matching (beta)")
+
+
+def apply_adaptive_hpf(y, sr):
+    import numpy as np
+    import librosa
+    from scipy.signal import butter, lfilter
+    from scipy.ndimage import gaussian_filter1d
+
+    hop_length = 256
+    frame_length = 1024
+
+    # RMS pro odhad energie
+    rms = librosa.feature.rms(y=y, frame_length=frame_length, hop_length=hop_length)[0]
+
+    # normalize
+    rms_norm = rms / (np.max(rms) + 1e-6)
+
+    # odhad cutoff (adaptivní)
+    # tichá místa → vyšší cutoff (víc čistit)
+    # hlasitá místa → nižší cutoff (chránit hlas)
+    cutoff = 60 + (1.0 - rms_norm) * 80  # cca 60–140 Hz
+
+    # smoothing aby nebyly artefakty
+    cutoff = gaussian_filter1d(cutoff, sigma=3)
+
+    # převod na sample domain
+    cutoff_samples = np.interp(
+        np.arange(len(y)), np.arange(len(cutoff)) * hop_length, cutoff
+    )
+
+    # filtr po samplech
+    y_out = np.zeros_like(y)
+
+    for i in range(len(y)):
+        fc = cutoff_samples[i]
+
+        # jednoduchý 1st order HPF
+        alpha = fc / (fc + sr / (2 * np.pi))
+        if i == 0:
+            y_out[i] = y[i]
+        else:
+            y_out[i] = alpha * (y_out[i - 1] + y[i] - y[i - 1])
+
+    return y_out
+
 
 st.info("💡 Upload files and click process.")
 
