@@ -309,6 +309,40 @@ def analyze_and_match_vocal(
     if apply_tonal:
         y_modulated = apply_tonal_matching(y_ref, y_modulated, sr)
 
+    # --- Final Loudness Rebalance (after tonal) ---
+    meter = pyln.Meter(sr)
+
+    lufs_ref = meter.integrated_loudness(y_ref.astype("float32"))
+    lufs_out = meter.integrated_loudness(y_modulated.astype("float32"))
+
+    lufs_diff = lufs_ref - lufs_out
+
+    rebalance_gain_db = lufs_diff * 0.7
+    rebalance_gain = 10 ** (rebalance_gain_db / 20.0)
+
+    y_modulated *= rebalance_gain
+
+    # --- Final Peak Control (after tonal) ---
+    target_peak = np.max(np.abs(y_ref)) * 0.92
+
+    frame_peaks = np.array(
+        [
+            np.max(np.abs(y_modulated[i : i + frame_length]))
+            for i in range(0, len(y_modulated), hop_length)
+        ]
+    )
+
+    gain_reduction = np.clip(target_peak / (frame_peaks + 1e-9), 0.60, 1.0)
+    gain_reduction = gaussian_filter1d(gain_reduction, sigma=3)
+
+    gain_samples = np.interp(
+        np.arange(len(y_modulated)),
+        np.arange(len(gain_reduction)) * hop_length,
+        gain_reduction,
+    )
+
+    y_modulated *= gain_samples
+
     times = librosa.times_like(rms_ref_macro, sr=sr, hop_length=hop_length)
 
     metrics_ref = calculate_r128_metrics(y_ref, sr)
@@ -349,13 +383,13 @@ def apply_tonal_matching(y_ref, y_target, sr):
     eq_curve = ref_avg / target_avg
 
     # ---- smooth EQ curve ----
-    eq_curve = gaussian_filter1d(eq_curve, sigma=3)
+    eq_curve = gaussian_filter1d(eq_curve, sigma=2)
 
     # ---- limit extreme EQ ----
-    eq_curve = np.clip(eq_curve, 0.5, 2.0)
+    eq_curve = np.clip(eq_curve, 0.4, 2.5)
 
     # ---- apply with blend ----
-    eq_strength = 0.4  # začni konzervativně
+    eq_strength = 0.6  # začni konzervativně
 
     target_stft_complex = librosa.stft(y_target, n_fft=n_fft)
     mag = np.abs(target_stft_complex)
