@@ -77,7 +77,9 @@ def analyze_and_match_vocal(
     y_target = y_target * pre_gain
 
     # --- Adaptive HPF cleanup ---
-    y_target = apply
+    y_target = apply_adaptive_hpf(y_target, sr)
+
+    max_len = max(len(y_ref), len(y_target))
 
     max_len = max(len(y_ref), len(y_target))
     y_ref = librosa.util.fix_length(y_ref, size=max_len)
