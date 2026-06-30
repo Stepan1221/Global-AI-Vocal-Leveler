@@ -292,9 +292,9 @@ def analyze_and_match_vocal(
         ]
     )
 
-    gain_reduction = np.clip(target_peak / (frame_peaks + 1e-9), 0.85, 1.0)
+    gain_reduction = np.clip(target_peak / (frame_peaks + 1e-9), 0.65, 1.0)
 
-    gain_reduction = gaussian_filter1d(gain_reduction, sigma=2)
+    gain_reduction = gaussian_filter1d(gain_reduction, sigma=3)
 
     gain_samples = np.interp(
         np.arange(len(y_modulated)),
