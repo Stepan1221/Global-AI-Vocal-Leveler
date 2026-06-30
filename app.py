@@ -281,28 +281,48 @@ def analyze_and_match_vocal(
 
     y_modulated = y_modulated * rebalance_gain
 
-    # --- Gentle Peak Control (reference-based) ---
-    # cílový peak podle reference
-    target_peak_db = 20 * np.log10(np.max(np.abs(y_ref)) + 1e-9)
+    # --- Selective Micro-Peak Leveling (transparent) ---
 
-    max_reduction_db = 3.0  # max zásah
-
-    # oversampled true peak (stejný jako metrika)
+    # target peak z reference (true peak)
     upsample_factor = 4
-    y_upsampled = np.interp(
+    y_ref_up = np.interp(
+        np.linspace(0, len(y_ref), len(y_ref) * upsample_factor),
+        np.arange(len(y_ref)),
+        y_ref,
+    )
+    target_peak = np.max(np.abs(y_ref_up))
+
+    # oversample output
+    y_mod_up = np.interp(
         np.linspace(0, len(y_modulated), len(y_modulated) * upsample_factor),
         np.arange(len(y_modulated)),
         y_modulated,
     )
 
-    current_peak = 20 * np.log10(np.max(np.abs(y_upsampled)) + 1e-9)
+    # detekce peaků nad target
+    mask = y_mod_up > target_peak
+    mask |= y_mod_up < -target_peak  # i negativní špičky
 
-    peak_diff = current_peak - target_peak_db
+    # jemná redukce (max -3 dB = ~0.707)
+    max_reduction = 0.707
 
-    if peak_diff > 0:
-        reduction_db = min(peak_diff, max_reduction_db)
-        gain = 10 ** (-reduction_db / 20.0)
-        y_modulated = y_modulated * gain
+    # vytvoření gain masky
+    gain_mask = np.ones_like(y_mod_up)
+    gain_mask[mask] = np.clip(
+        target_peak / (np.abs(y_mod_up[mask]) + 1e-9), max_reduction, 1.0
+    )
+
+    # smoothing (aby nebyl pumping)
+    gain_mask = gaussian_filter1d(gain_mask, sigma=2)
+
+    # aplikace zpět na normální rozlišení
+    gain_samples = np.interp(
+        np.arange(len(y_modulated)),
+        np.linspace(0, len(y_modulated) - 1, len(gain_mask)),
+        gain_mask,
+    )
+
+    y_modulated = y_modulated * gain_samples
 
     times = librosa.times_like(rms_ref_macro, sr=sr, hop_length=hop_length)
 
