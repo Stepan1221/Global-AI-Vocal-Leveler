@@ -284,9 +284,9 @@ def analyze_and_match_vocal(
     # --- Selective Micro-Peak Leveling (transparent) ---
 
     # target peak z reference (true peak)
-    upsample_factor = 4
+    upsample_factor = 2
     y_ref_up = np.interp(
-        np.linspace(0, len(y_ref), len(y_ref) * upsample_factor),
+        np.linspace(0, len(y_modulated) - 1, len(y_modulated) * upsample_factor),
         np.arange(len(y_ref)),
         y_ref,
     )
