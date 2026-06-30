@@ -283,7 +283,7 @@ def analyze_and_match_vocal(
 
     # --- Frame-based Selective Micro-Peak Leveling (SAFE) ---
 
-    target_peak = np.max(np.abs(y_ref)) * 0.95
+    target_peak = np.max(np.abs(y_ref)) * 0.92
 
     frame_peaks = np.array(
         [
