@@ -48,7 +48,9 @@ def analyze_and_match_vocal(
     intensity=50,
     onset_sensitivity=0.5,
     smoothing_mode="Balanced",
+    apply_tonal=False,  # ✅ přidat
 ):
+
     # 1. Load Audio Files
     y_ref, sr = librosa.load(ref_file, sr=None)
     y_target, _ = librosa.load(target_file, sr=sr)
@@ -304,6 +306,9 @@ def analyze_and_match_vocal(
 
     y_modulated *= gain_samples
 
+    if apply_tonal:
+        y_modulated = apply_tonal_matching(y_ref, y_modulated, sr)
+
     times = librosa.times_like(rms_ref_macro, sr=sr, hop_length=hop_length)
 
     metrics_ref = calculate_r128_metrics(y_ref, sr)
@@ -325,6 +330,49 @@ def analyze_and_match_vocal(
     )
 
 
+def apply_tonal_matching(y_ref, y_target, sr):
+    import numpy as np
+    import librosa
+    from scipy.ndimage import gaussian_filter1d
+
+    # ---- STFT ----
+    n_fft = 2048
+
+    ref_stft = np.abs(librosa.stft(y_ref, n_fft=n_fft))
+    target_stft = np.abs(librosa.stft(y_target, n_fft=n_fft))
+
+    # ---- average spectrum ----
+    ref_avg = np.mean(ref_stft, axis=1)
+    target_avg = np.mean(target_stft, axis=1) + 1e-9
+
+    # ---- EQ difference (linear) ----
+    eq_curve = ref_avg / target_avg
+
+    # ---- smooth EQ curve ----
+    eq_curve = gaussian_filter1d(eq_curve, sigma=3)
+
+    # ---- limit extreme EQ ----
+    eq_curve = np.clip(eq_curve, 0.5, 2.0)
+
+    # ---- apply with blend ----
+    eq_strength = 0.4  # začni konzervativně
+
+    target_stft_complex = librosa.stft(y_target, n_fft=n_fft)
+    mag = np.abs(target_stft_complex)
+    phase = np.angle(target_stft_complex)
+
+    # blend
+    eq_curve = (1 - eq_strength) + eq_strength * eq_curve
+
+    # apply frequency shaping
+    mag_matched = mag * eq_curve[:, np.newaxis]
+
+    # reconstruct
+    y_out = librosa.istft(mag_matched * np.exp(1j * phase))
+
+    return y_out
+
+
 # --- WEB INTERFACE ---
 st.set_page_config(page_title="AI Vocal Leveler", page_icon="🎤", layout="centered")
 st.title("🎤 AI Vocal Leveler")
@@ -342,6 +390,8 @@ target_upload = st.file_uploader(
 
 st.write("---")
 st.subheader("🚀 Automatic Processing")
+
+apply_tonal = st.checkbox("🎛 Apply tonal matching (beta)")
 
 st.info("💡 Upload files and click process.")
 
@@ -367,7 +417,9 @@ if ref_upload and target_upload:
                     55,
                     0.5,
                     "Balanced",
+                    apply_tonal=apply_tonal,  # ✅ přidat
                 )
+
                 output_fn = "leveled_target_vocal.wav"
                 sf.write(output_fn, output_audio, sample_rate)
 
