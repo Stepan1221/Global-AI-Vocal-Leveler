@@ -442,7 +442,7 @@ def apply_adaptive_hpf(y, sr):
     from scipy.ndimage import gaussian_filter1d
 
     n_fft = 2048
-    hop_length = 256
+    hop_length = 512
 
     # --- STFT ---
     stft = librosa.stft(y, n_fft=n_fft, hop_length=hop_length)
@@ -467,7 +467,7 @@ def apply_adaptive_hpf(y, sr):
     fundamental_freqs = np.clip(fundamental_freqs, 70, 250)
 
     # --- smoothing ---
-    fundamental_freqs = gaussian_filter1d(fundamental_freqs, sigma=5)
+    fundamental_freqs = gaussian_filter1d(fundamental_freqs, sigma=10)
 
     # --- cutoff ---
     safety_margin = 20
@@ -476,7 +476,7 @@ def apply_adaptive_hpf(y, sr):
 
     # --- soft mask ---
     mask = np.zeros_like(mag)
-    transition_width = 10  # měkký přechod
+    transition_width = 20  # měkký přechod
 
     for t in range(n_frames):
         mask[:, t] = np.clip((freqs - cutoff[t]) / transition_width, 0, 1)
