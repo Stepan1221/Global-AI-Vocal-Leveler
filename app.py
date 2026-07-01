@@ -76,8 +76,11 @@ def analyze_and_match_vocal(
 
     y_target = y_target * pre_gain
 
-    # --- Adaptive HPF cleanup ---
+    # --- Adaptive HPF ---
     y_target = apply_adaptive_hpf(y_target, sr)
+
+    # --- Fixed HPF 50 Hz ---
+    y_target = apply_fixed_hpf(y_target, sr, cutoff=50)
 
     max_len = max(len(y_ref), len(y_target))
 
@@ -448,7 +451,7 @@ def apply_adaptive_hpf(y, sr):
 
     freqs = librosa.fft_frequencies(sr=sr, n_fft=n_fft)
 
-    # --- pouze low band pro detekci ---
+    # --- low band pro detekci ---
     low_band = freqs < 300
 
     n_frames = mag.shape[1]
@@ -463,43 +466,43 @@ def apply_adaptive_hpf(y, sr):
     # --- stabilizace ---
     fundamental_freqs = np.clip(fundamental_freqs, 70, 250)
 
-    # --- smoothing proti artefaktům ---
+    # --- smoothing ---
     fundamental_freqs = gaussian_filter1d(fundamental_freqs, sigma=5)
 
-    # --- adaptive cutoff ---
+    # --- cutoff ---
     safety_margin = 20
     cutoff = np.maximum(50, fundamental_freqs * 0.8 - safety_margin)
     cutoff = np.minimum(cutoff, 200)
 
-    # --- vytvoření masky ---
+    # --- soft mask ---
     mask = np.zeros_like(mag)
-
-    transition_width = 5  # doporučené stabilní číslo
+    transition_width = 10  # měkký přechod
 
     for t in range(n_frames):
-        denom = max(transition_width, 1e-6)
+        mask[:, t] = np.clip((freqs - cutoff[t]) / transition_width, 0, 1)
 
-        soft = (freqs - cutoff[t]) / denom
-        soft = np.clip(soft, 0, 1)
-
-        hard = (freqs >= cutoff[t]).astype(float)
-
-        mask[:, t] = soft * hard
-
-    # --- aplikace adaptive HPF ---
+    # --- aplikace ---
     mag_filtered = mag * mask
 
-    # --- HARD CUT pod 60 Hz ---
-    low_cut_mask = (freqs >= 60).astype(float)
-    mag_filtered = mag_filtered * low_cut_mask[:, np.newaxis]
-
-    # --- ochrana proti NaN / inf ---
-    mag_filtered = np.nan_to_num(mag_filtered, nan=0.0, posinf=0.0, neginf=0.0)
-
-    # --- rekonstrukce ---
+    # --- rekonstukce ---
     y_out = librosa.istft(mag_filtered * np.exp(1j * phase), hop_length=hop_length)
 
     return y_out
+
+
+from scipy.signal import butter, filtfilt
+
+
+def apply_fixed_hpf(y, sr, cutoff=50):
+    nyquist = 0.5 * sr
+    norm_cutoff = cutoff / nyquist
+
+    # 4th order → cca ~24 dB/oct → můžeme aplikovat 2x pro větší strmost
+    b, a = butter(4, norm_cutoff, btype="highpass")
+
+    y_filtered = filtfilt(b, a, y)
+
+    return y_filtered
 
 
 st.info("💡 Upload files and click process.")
