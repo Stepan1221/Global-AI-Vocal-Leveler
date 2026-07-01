@@ -473,7 +473,7 @@ def apply_adaptive_hpf(y, sr):
 
     # --- vytvoření masky ---
     mask = np.zeros_like(mag)
-    transition_width = 10  # Hz
+    transition_width = 0.5  # Hz
 
     for t in range(n_frames):
         mask[:, t] = np.clip((freqs - cutoff[t]) / transition_width, 0, 1)
