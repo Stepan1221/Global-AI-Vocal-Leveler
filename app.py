@@ -436,6 +436,7 @@ apply_tonal = st.checkbox("🎛 Apply tonal matching (beta)")
 def apply_adaptive_hpf(y, sr):
     import numpy as np
     import librosa
+    from scipy.ndimage import gaussian_filter1d
 
     n_fft = 2048
     hop_length = 256
@@ -446,25 +447,35 @@ def apply_adaptive_hpf(y, sr):
 
     freqs = librosa.fft_frequencies(sr=sr, n_fft=n_fft)
 
-    # --- odhad fundamentu (hrubý, ale funkční) ---
-    spectral_energy = np.mean(mag, axis=1)
-
-    # vezmeme low band (do 300 Hz)
     low_band = freqs < 300
 
-    fundamental_idx = np.argmax(spectral_energy * low_band)
-    fundamental_freq = freqs[fundamental_idx]
+    n_frames = mag.shape[1]
+    fundamental_freqs = np.zeros(n_frames)
+
+    # --- frame-based fundamental detection ---
+    for t in range(n_frames):
+        spectrum = mag[:, t]
+        idx = np.argmax(spectrum * low_band)
+        fundamental_freqs[t] = freqs[idx]
+
+    # --- stabilizace ---
+    fundamental_freqs = np.clip(fundamental_freqs, 70, 250)
+
+    # --- smoothing (nutné proti artefaktům)
+    fundamental_freqs = gaussian_filter1d(fundamental_freqs, sigma=3)
 
     # --- adaptive cutoff ---
-    safety_margin = 20  # Hz ochrana fundamentu
+    safety_margin = 20
+    cutoff = np.maximum(50, fundamental_freqs * 0.8 - safety_margin)
+    cutoff = np.minimum(cutoff, 200)
 
-    cutoff_base = max(50, fundamental_freq * 0.8 - safety_margin)
-    cutoff = min(cutoff_base, 200)  # hard ceiling
+    # --- maska ---
+    mask = np.zeros_like(mag)
+    for t in range(n_frames):
+        mask[:, t] = freqs >= cutoff[t]
 
-    # --- HARD CUT (brick) ---
-    mask = freqs >= cutoff
-
-    mag_filtered = mag * mask[:, np.newaxis]
+    # --- aplikace ---
+    mag_filtered = mag * mask
 
     y_out = librosa.istft(mag_filtered * np.exp(1j * phase), hop_length=hop_length)
 
