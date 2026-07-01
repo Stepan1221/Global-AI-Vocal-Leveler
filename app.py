@@ -322,7 +322,7 @@ def analyze_and_match_vocal(
 
     lufs_diff = lufs_ref - lufs_out
 
-    rebalance_gain_db = lufs_diff * 0.7
+    rebalance_gain_db = lufs_diff * 1.0
     rebalance_gain = 10 ** (rebalance_gain_db / 20.0)
 
     y_modulated *= rebalance_gain
@@ -456,7 +456,9 @@ def apply_adaptive_hpf(y, sr):
     fundamental_freq = freqs[fundamental_idx]
 
     # --- adaptive cutoff ---
-    cutoff_base = max(60, fundamental_freq * 0.8)
+    safety_margin = 20  # Hz ochrana fundamentu
+
+    cutoff_base = max(50, fundamental_freq * 0.8 - safety_margin)
     cutoff = min(cutoff_base, 200)  # hard ceiling
 
     # --- HARD CUT (brick) ---
