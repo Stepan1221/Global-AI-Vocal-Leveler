@@ -441,12 +441,14 @@ def apply_adaptive_hpf(y, sr):
     n_fft = 2048
     hop_length = 256
 
+    # --- STFT ---
     stft = librosa.stft(y, n_fft=n_fft, hop_length=hop_length)
     mag = np.abs(stft)
     phase = np.angle(stft)
 
     freqs = librosa.fft_frequencies(sr=sr, n_fft=n_fft)
 
+    # --- pouze low band pro detekci ---
     low_band = freqs < 300
 
     n_frames = mag.shape[1]
@@ -461,7 +463,7 @@ def apply_adaptive_hpf(y, sr):
     # --- stabilizace ---
     fundamental_freqs = np.clip(fundamental_freqs, 70, 250)
 
-    # --- smoothing (nutné proti artefaktům)
+    # --- smoothing proti artefaktům ---
     fundamental_freqs = gaussian_filter1d(fundamental_freqs, sigma=5)
 
     # --- adaptive cutoff ---
@@ -469,21 +471,22 @@ def apply_adaptive_hpf(y, sr):
     cutoff = np.maximum(50, fundamental_freqs * 0.8 - safety_margin)
     cutoff = np.minimum(cutoff, 200)
 
-    # --- maska ---
+    # --- vytvoření masky ---
     mask = np.zeros_like(mag)
-    for t in range(n_frames):
-        transition_width = 10  # Hz
+    transition_width = 10  # Hz
 
+    for t in range(n_frames):
         mask[:, t] = np.clip((freqs - cutoff[t]) / transition_width, 0, 1)
 
-    # --- aplikace ---
+    # --- aplikace adaptive HPF ---
     mag_filtered = mag * mask
 
-    y_out = librosa.istft(mag_filtered * np.exp(1j * phase), hop_length=hop_length)
-
-    # --- Hard floor cut (60 Hz) ---
+    # --- HARD CUT pod 60 Hz (finální cleanup) ---
     low_cut_mask = freqs >= 60
     mag_filtered = mag_filtered * low_cut_mask[:, np.newaxis]
+
+    # --- rekonstrukce ---
+    y_out = librosa.istft(mag_filtered * np.exp(1j * phase), hop_length=hop_length)
 
     return y_out
 
