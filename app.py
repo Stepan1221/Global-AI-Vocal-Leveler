@@ -462,7 +462,7 @@ def apply_adaptive_hpf(y, sr):
     fundamental_freqs = np.clip(fundamental_freqs, 70, 250)
 
     # --- smoothing (nutné proti artefaktům)
-    fundamental_freqs = gaussian_filter1d(fundamental_freqs, sigma=3)
+    fundamental_freqs = gaussian_filter1d(fundamental_freqs, sigma=5)
 
     # --- adaptive cutoff ---
     safety_margin = 20
@@ -478,6 +478,10 @@ def apply_adaptive_hpf(y, sr):
     mag_filtered = mag * mask
 
     y_out = librosa.istft(mag_filtered * np.exp(1j * phase), hop_length=hop_length)
+
+    # --- Hard floor cut (60 Hz) ---
+    low_cut_mask = freqs >= 60
+    mag_filtered = mag_filtered * low_cut_mask[:, np.newaxis]
 
     return y_out
 
