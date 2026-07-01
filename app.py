@@ -82,7 +82,7 @@ def analyze_and_match_vocal(
 
     # --- Optional Light Denoise ---
     if apply_denoise:
-    y_target = apply_light_denoise(y_target, sr)
+        y_target = apply_light_denoise(y_target, sr)
 
     # --- Fixed HPF 50 Hz ---
     # y_target = apply_fixed_hpf(y_target, sr, cutoff=50)
@@ -511,6 +511,7 @@ def apply_fixed_hpf(y, sr, cutoff=50):
 
     return y_filtered
 
+
 def apply_light_denoise(y, sr):
     import numpy as np
     import librosa
@@ -542,12 +543,10 @@ def apply_light_denoise(y, sr):
     # smoothing
     mag_clean = gaussian_filter1d(mag_clean, sigma=1, axis=1)
 
-    y_out = librosa.istft(
-        mag_clean * np.exp(1j * phase),
-        hop_length=hop_length
-    )
+    y_out = librosa.istft(mag_clean * np.exp(1j * phase), hop_length=hop_length)
 
     return y_out
+
 
 st.info("💡 Upload files and click process.")
 
