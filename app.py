@@ -535,7 +535,7 @@ def apply_light_denoise(y, sr):
         noise_profile = np.zeros(mag.shape[0])
 
     # jemné potlačení šumu
-    denoise_strength = 0.15
+    denoise_strength = 0.25
 
     mag_clean = mag - (noise_profile[:, np.newaxis] * denoise_strength)
     mag_clean = np.maximum(mag_clean, 0)
