@@ -525,7 +525,7 @@ def apply_light_denoise(y, sr):
     mag = np.abs(stft)
     phase = np.angle(stft)
 
-    # odhad noise floor z 10 % nejtišších framů
+    # --- noise profile ---
     frame_energy = np.mean(mag, axis=0)
     noise_frames = frame_energy <= np.percentile(frame_energy, 10)
 
@@ -534,13 +534,34 @@ def apply_light_denoise(y, sr):
     else:
         noise_profile = np.zeros(mag.shape[0])
 
-    # jemné potlačení šumu
+    # --- frequency weighting ---
+    freqs = librosa.fft_frequencies(sr=sr, n_fft=n_fft)
+
+    weights = np.ones_like(freqs)
+
+    weights[freqs < 200] = 0.10
+    weights[(freqs >= 200) & (freqs < 1000)] = 0.50
+    weights[(freqs >= 1000) & (freqs < 4000)] = 1.00
+    weights[freqs >= 4000] = 1.20
+
+    # --- adaptive strength by loudness ---
+    frame_strength = 1 - (frame_energy / (np.max(frame_energy) + 1e-9))
+
+    frame_strength = np.clip(frame_strength, 0.1, 1.0)
+
     denoise_strength = 0.25
 
-    mag_clean = mag - (noise_profile[:, np.newaxis] * denoise_strength)
+    reduction = (
+        noise_profile[:, np.newaxis]
+        * weights[:, np.newaxis]
+        * frame_strength[np.newaxis, :]
+        * denoise_strength
+    )
+
+    mag_clean = mag - reduction
     mag_clean = np.maximum(mag_clean, 0)
 
-    # smoothing
+    # --- smoothing ---
     mag_clean = gaussian_filter1d(mag_clean, sigma=1, axis=1)
 
     y_out = librosa.istft(mag_clean * np.exp(1j * phase), hop_length=hop_length)
