@@ -48,7 +48,8 @@ def analyze_and_match_vocal(
     intensity=50,
     onset_sensitivity=0.5,
     smoothing_mode="Balanced",
-    apply_tonal=False,  # ✅ přidat
+    apply_tonal=False,
+    apply_denoise=False,
 ):
 
     # 1. Load Audio Files
@@ -78,6 +79,10 @@ def analyze_and_match_vocal(
 
     # --- Adaptive HPF ---
     y_target = apply_adaptive_hpf(y_target, sr)
+
+    # --- Optional Light Denoise ---
+    if apply_denoise:
+    y_target = apply_light_denoise(y_target, sr)
 
     # --- Fixed HPF 50 Hz ---
     # y_target = apply_fixed_hpf(y_target, sr, cutoff=50)
@@ -435,6 +440,8 @@ st.subheader("🚀 Automatic Processing")
 
 apply_tonal = st.checkbox("🎛 Apply tonal matching (beta)")
 
+apply_denoise = st.checkbox("🧹 Apply light denoise (beta)")
+
 
 def apply_adaptive_hpf(y, sr):
     import numpy as np
@@ -504,6 +511,43 @@ def apply_fixed_hpf(y, sr, cutoff=50):
 
     return y_filtered
 
+def apply_light_denoise(y, sr):
+    import numpy as np
+    import librosa
+    from scipy.ndimage import gaussian_filter1d
+
+    n_fft = 2048
+    hop_length = 512
+
+    stft = librosa.stft(y, n_fft=n_fft, hop_length=hop_length)
+
+    mag = np.abs(stft)
+    phase = np.angle(stft)
+
+    # odhad noise floor z 10 % nejtišších framů
+    frame_energy = np.mean(mag, axis=0)
+    noise_frames = frame_energy <= np.percentile(frame_energy, 10)
+
+    if np.any(noise_frames):
+        noise_profile = np.median(mag[:, noise_frames], axis=1)
+    else:
+        noise_profile = np.zeros(mag.shape[0])
+
+    # jemné potlačení šumu
+    denoise_strength = 0.15
+
+    mag_clean = mag - (noise_profile[:, np.newaxis] * denoise_strength)
+    mag_clean = np.maximum(mag_clean, 0)
+
+    # smoothing
+    mag_clean = gaussian_filter1d(mag_clean, sigma=1, axis=1)
+
+    y_out = librosa.istft(
+        mag_clean * np.exp(1j * phase),
+        hop_length=hop_length
+    )
+
+    return y_out
 
 st.info("💡 Upload files and click process.")
 
@@ -529,7 +573,8 @@ if ref_upload and target_upload:
                     55,
                     0.5,
                     "Balanced",
-                    apply_tonal=apply_tonal,  # ✅ přidat
+                    apply_tonal=apply_tonal,
+                    apply_denoise=apply_denoise,
                 )
 
                 output_fn = "leveled_target_vocal.wav"
