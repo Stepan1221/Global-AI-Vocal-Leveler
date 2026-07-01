@@ -473,20 +473,28 @@ def apply_adaptive_hpf(y, sr):
 
     # --- vytvoření masky ---
     mask = np.zeros_like(mag)
-    transition_width = 0.5  # Hz
+
+    transition_width = 5  # doporučené stabilní číslo
 
     for t in range(n_frames):
-        soft = np.clip((freqs - cutoff[t]) / transition_width, 0, 1)
-    hard = (freqs >= cutoff[t]).astype(float)
+        denom = max(transition_width, 1e-6)
 
-    mask[:, t] = soft * hard
+        soft = (freqs - cutoff[t]) / denom
+        soft = np.clip(soft, 0, 1)
+
+        hard = (freqs >= cutoff[t]).astype(float)
+
+        mask[:, t] = soft * hard
 
     # --- aplikace adaptive HPF ---
     mag_filtered = mag * mask
 
-    # --- HARD CUT pod 60 Hz (finální cleanup) ---
-    low_cut_mask = freqs >= 60
+    # --- HARD CUT pod 60 Hz ---
+    low_cut_mask = (freqs >= 60).astype(float)
     mag_filtered = mag_filtered * low_cut_mask[:, np.newaxis]
+
+    # --- ochrana proti NaN / inf ---
+    mag_filtered = np.nan_to_num(mag_filtered, nan=0.0, posinf=0.0, neginf=0.0)
 
     # --- rekonstrukce ---
     y_out = librosa.istft(mag_filtered * np.exp(1j * phase), hop_length=hop_length)
