@@ -471,7 +471,7 @@ def apply_adaptive_hpf(y, sr):
 
     # --- cutoff ---
     safety_margin = 20
-    cutoff = np.maximum(40 fundamental_freqs * 0.6 - safety_margin)
+    cutoff = np.maximum(40, fundamental_freqs * 0.6 - safety_margin)
     cutoff = np.minimum(cutoff, 200)
 
     # --- soft mask ---
