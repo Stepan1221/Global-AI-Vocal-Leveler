@@ -50,6 +50,7 @@ def analyze_and_match_vocal(
     smoothing_mode="Balanced",
     apply_tonal=False,
     apply_denoise=False,
+    apply_dereverb=False,
 ):
 
     # 1. Load Audio Files
@@ -83,6 +84,10 @@ def analyze_and_match_vocal(
     # --- Optional Light Denoise ---
     if apply_denoise:
         y_target = apply_light_denoise(y_target, sr)
+
+    # --- Optional Light De-reverb ---
+    if apply_dereverb:
+        y_target = apply_light_dereverb(y_target, sr)
 
     # --- Fixed HPF 50 Hz ---
     # y_target = apply_fixed_hpf(y_target, sr, cutoff=50)
@@ -442,6 +447,8 @@ apply_tonal = st.checkbox("🎛 Apply tonal matching (beta)")
 
 apply_denoise = st.checkbox("🧹 Apply light denoise (beta)")
 
+apply_dereverb = st.checkbox("🏠 Apply light de-reverb (beta)")
+
 
 def apply_adaptive_hpf(y, sr):
     import numpy as np
@@ -569,6 +576,32 @@ def apply_light_denoise(y, sr):
     return y_out
 
 
+def apply_light_dereverb(y, sr):
+    import numpy as np
+    import librosa
+    from scipy.ndimage import gaussian_filter1d
+
+    n_fft = 2048
+    hop_length = 512
+
+    stft = librosa.stft(y, n_fft=n_fft, hop_length=hop_length)
+
+    mag = np.abs(stft)
+    phase = np.angle(stft)
+
+    # dlouhodobá energie = odhad room tailu
+    reverb_estimate = gaussian_filter1d(mag, sigma=8, axis=1)
+
+    dereverb_strength = 0.20
+
+    mag_clean = mag - (reverb_estimate * dereverb_strength)
+    mag_clean = np.maximum(mag_clean, 0)
+
+    y_out = librosa.istft(mag_clean * np.exp(1j * phase), hop_length=hop_length)
+
+    return y_out
+
+
 st.info("💡 Upload files and click process.")
 
 if ref_upload and target_upload:
@@ -595,6 +628,7 @@ if ref_upload and target_upload:
                     "Balanced",
                     apply_tonal=apply_tonal,
                     apply_denoise=apply_denoise,
+                    apply_dereverb=apply_dereverb,
                 )
 
                 output_fn = "leveled_target_vocal.wav"
