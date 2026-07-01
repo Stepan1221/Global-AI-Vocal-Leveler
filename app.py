@@ -592,7 +592,7 @@ def apply_light_dereverb(y, sr):
     # dlouhodobá energie = odhad room tailu
     reverb_estimate = gaussian_filter1d(mag, sigma=8, axis=1)
 
-    dereverb_strength = 0.20
+    dereverb_strength = 0.15
 
     mag_clean = mag - (reverb_estimate * dereverb_strength)
     mag_clean = np.maximum(mag_clean, 0)
