@@ -391,13 +391,13 @@ def apply_tonal_matching(y_ref, y_target, sr):
     eq_curve = ref_avg / target_avg
 
     # ---- smooth EQ curve ----
-    eq_curve = gaussian_filter1d(eq_curve, sigma=2)
+    eq_curve = gaussian_filter1d(eq_curve, sigma=1.5)
 
     # ---- limit extreme EQ ----
     eq_curve = np.clip(eq_curve, 0.4, 2.5)
 
     # ---- apply with blend ----
-    eq_strength = 0.6  # začni konzervativně
+    eq_strength = 0.8  # začni konzervativně
 
     target_stft_complex = librosa.stft(y_target, n_fft=n_fft)
     mag = np.abs(target_stft_complex)
