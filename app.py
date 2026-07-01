@@ -80,7 +80,7 @@ def analyze_and_match_vocal(
     y_target = apply_adaptive_hpf(y_target, sr)
 
     # --- Fixed HPF 50 Hz ---
-    y_target = apply_fixed_hpf(y_target, sr, cutoff=50)
+    # y_target = apply_fixed_hpf(y_target, sr, cutoff=50)
 
     max_len = max(len(y_ref), len(y_target))
 
