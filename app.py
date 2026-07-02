@@ -543,59 +543,17 @@ def apply_fixed_hpf(y, sr, cutoff=50):
     return y_filtered
 
 
-def apply_light_denoise(y, sr):
+def apply_light_declick(y, sr):
+    from scipy.signal import medfilt
     import numpy as np
-    import librosa
-    from scipy.ndimage import gaussian_filter1d
 
-    n_fft = 2048
-    hop_length = 512
+    # velmi jemný globální declick
+    smoothed = medfilt(y, kernel_size=3)
 
-    stft = librosa.stft(y, n_fft=n_fft, hop_length=hop_length)
+    # pouze lehké přimíchání
+    blend = 0.08
 
-    mag = np.abs(stft)
-    phase = np.angle(stft)
-
-    # --- noise profile ---
-    frame_energy = np.mean(mag, axis=0)
-    noise_frames = frame_energy <= np.percentile(frame_energy, 10)
-
-    if np.any(noise_frames):
-        noise_profile = np.median(mag[:, noise_frames], axis=1)
-    else:
-        noise_profile = np.zeros(mag.shape[0])
-
-    # --- frequency weighting ---
-    freqs = librosa.fft_frequencies(sr=sr, n_fft=n_fft)
-
-    weights = np.ones_like(freqs)
-
-    weights[freqs < 200] = 0.10
-    weights[(freqs >= 200) & (freqs < 1000)] = 0.50
-    weights[(freqs >= 1000) & (freqs < 4000)] = 1.00
-    weights[freqs >= 4000] = 1.20
-
-    # --- adaptive strength by loudness ---
-    frame_strength = 1 - (frame_energy / (np.max(frame_energy) + 1e-9))
-
-    frame_strength = np.clip(frame_strength, 0.1, 1.0)
-
-    denoise_strength = 0.25
-
-    reduction = (
-        noise_profile[:, np.newaxis]
-        * weights[:, np.newaxis]
-        * frame_strength[np.newaxis, :]
-        * denoise_strength
-    )
-
-    mag_clean = mag - reduction
-    mag_clean = np.maximum(mag_clean, 0)
-
-    # --- smoothing ---
-    mag_clean = gaussian_filter1d(mag_clean, sigma=1, axis=1)
-
-    y_out = librosa.istft(mag_clean * np.exp(1j * phase), hop_length=hop_length)
+    y_out = ((1 - blend) * y) + (blend * smoothed)
 
     return y_out
 
