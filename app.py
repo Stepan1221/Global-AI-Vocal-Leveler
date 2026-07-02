@@ -460,7 +460,7 @@ apply_denoise = st.checkbox("🧹 Apply light denoise (beta)")
 
 apply_dereverb = st.checkbox("🏠 Apply light de-reverb (beta)")
 
-apply_strip_silence = st.checkbox("✂️ Strip silence (beta)")
+enable_strip_silence = st.checkbox("✂️ Strip silence (beta)")
 
 
 def apply_adaptive_hpf(y, sr):
@@ -623,19 +623,36 @@ def apply_strip_silence(
     fade_ms=15,
 ):
     import numpy as np
+    import librosa
+
+    # --- RMS analýza po 20 ms oknech ---
+    frame_ms = 20
+
+    frame_length = int(sr * frame_ms / 1000)
+    hop_length = frame_length
+
+    rms = librosa.feature.rms(
+        y=y,
+        frame_length=frame_length,
+        hop_length=hop_length,
+    )[0]
 
     threshold = 10 ** (silence_threshold_db / 20)
 
-    silence_mask = np.abs(y) < threshold
+    silent_frames = rms < threshold
 
-    min_samples = int(sr * min_silence_ms / 1000)
+    min_frames = max(1, int(min_silence_ms / frame_ms))
+
     fade_samples = int(sr * fade_ms / 1000)
 
     y_out = y.copy()
 
+    stripped_regions = 0
+
     start = None
 
-    for i, is_silent in enumerate(silence_mask):
+    for i, is_silent in enumerate(silent_frames):
+
         if is_silent and start is None:
             start = i
 
@@ -643,26 +660,35 @@ def apply_strip_silence(
 
             length = i - start
 
-            if length >= min_samples:
+            if length >= min_frames:
 
-                end = i
+                stripped_regions += 1
 
-                fade_len = min(fade_samples, length // 2)
+                start_sample = start * hop_length
+                end_sample = i * hop_length
 
-                # celé ticho na nulu
-                y_out[start:end] = 0
+                fade_len = min(fade_samples, max(1, (end_sample - start_sample) // 2))
+
+                # celý region na nulu
+                y_out[start_sample:end_sample] = 0
 
                 # fade out
                 fade_out = np.linspace(1, 0, fade_len)
 
-                y_out[start : start + fade_len] = y[start : start + fade_len] * fade_out
+                y_out[start_sample : start_sample + fade_len] = (
+                    y[start_sample : start_sample + fade_len] * fade_out
+                )
 
                 # fade in
                 fade_in = np.linspace(0, 1, fade_len)
 
-                y_out[end - fade_len : end] = y[end - fade_len : end] * fade_in
+                y_out[end_sample - fade_len : end_sample] = (
+                    y[end_sample - fade_len : end_sample] * fade_in
+                )
 
             start = None
+
+    print(f"Strip Silence removed {stripped_regions} regions")
 
     return y_out
 
@@ -694,7 +720,7 @@ if ref_upload and target_upload:
                     apply_tonal=apply_tonal,
                     apply_denoise=apply_denoise,
                     apply_dereverb=apply_dereverb,
-                    apply_strip_silence=apply_strip_silence,
+                    apply_strip_silence=enable_strip_silence,
                 )
 
                 output_fn = "leveled_target_vocal.wav"
