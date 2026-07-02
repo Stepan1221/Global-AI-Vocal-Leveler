@@ -418,17 +418,68 @@ def apply_tonal_matching(y_ref, y_target, sr):
     ref_avg = np.mean(ref_stft, axis=1)
     target_avg = np.mean(target_stft, axis=1) + 1e-9
 
+    # ---- EQ difference ----
+    eq_curve = ref_avg / target_avg
+
+    # ---- smooth EQ curve ----
+    eq_curve = gaussian_filter1d(eq_curve, sigma=2.0)
+
+    # ---- limit extreme EQ ----
+    eq_curve = np.clip(eq_curve, 0.5, 2.0)
+
+    # ---- measure spectrum difference ----
+    spectrum_difference = np.mean(np.abs(20 * np.log10(eq_curve)))
+
+    # ---- adaptive EQ strength ----
+    if spectrum_difference < 2.0:
+        eq_strength = 0.40
+
+    elif spectrum_difference < 4.0:
+        eq_strength = 0.55
+
+    else:
+        eq_strength = 0.70
+
+    target_stft_complex = librosa.stft(y_target, n_fft=n_fft)
+
+    mag = np.abs(target_stft_complex)
+    phase = np.angle(target_stft_complex)
+
+    # ---- blend ----
+    eq_curve = (1 - eq_strength) + (eq_strength * eq_curve)
+
+    # ---- apply frequency shaping ----
+    mag_matched = mag * eq_curve[:, np.newaxis]
+
+    # ---- reconstruct ----
+    y_out = librosa.istft(mag_matched * np.exp(1j * phase))
+
+    return y_out
+    import numpy as np
+    import librosa
+    from scipy.ndimage import gaussian_filter1d
+
+    # ---- STFT ----
+    n_fft = 2048
+
+    ref_stft = np.abs(librosa.stft(y_ref, n_fft=n_fft))
+    target_stft = np.abs(librosa.stft(y_target, n_fft=n_fft))
+
+    # ---- average spectrum ----
+    ref_avg = np.mean(ref_stft, axis=1)
+    target_avg = np.mean(target_stft, axis=1) + 1e-9
+
     # ---- EQ difference (linear) ----
     eq_curve = ref_avg / target_avg
 
     # ---- smooth EQ curve ----
-    eq_curve = gaussian_filter1d(eq_curve, sigma=1.5)
+    eq_curve = gaussian_filter1d(eq_curve, sigma=2)
 
     # ---- limit extreme EQ ----
-    eq_curve = np.clip(eq_curve, 0.4, 2.5)
+    eq_curve = np.clip(eq_curve, 0.5, 2.0)
 
     # ---- apply with blend ----
-    eq_strength = 0.8  # začni konzervativně
+    eq_strength = 0.7  # začni konzervativně
 
     target_stft_complex = librosa.stft(y_target, n_fft=n_fft)
     mag = np.abs(target_stft_complex)
@@ -638,7 +689,7 @@ def apply_light_dereverb(y, sr):
     # dlouhodobá energie = odhad room tailu
     reverb_estimate = gaussian_filter1d(mag, sigma=8, axis=1)
 
-    dereverb_strength = 0.15
+    dereverb_strength = 0.10
 
     mag_clean = mag - (reverb_estimate * dereverb_strength)
     mag_clean = np.maximum(mag_clean, 0)
