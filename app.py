@@ -464,7 +464,7 @@ apply_denoise = st.checkbox("🧹 Apply light denoise (beta)", value=True)
 
 apply_dereverb = st.checkbox("🏠 Apply light de-reverb (beta)", value=True)
 
-enable_strip_silence = st.checkbox("✂️ Strip silence (beta)")
+enable_strip_silence = st.checkbox("✂️ Strip silence (beta)", value=True)
 
 
 def apply_adaptive_hpf(y, sr):
