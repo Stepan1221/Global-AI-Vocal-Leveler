@@ -53,6 +53,7 @@ def analyze_and_match_vocal(
     apply_dereverb=False,
     enable_strip_silence=False,
     apply_lowend_cleanup=True,
+    apply_declick=False,
 ):
 
     # 1. Load Audio Files
@@ -91,6 +92,10 @@ def analyze_and_match_vocal(
     # --- Optional Light De-reverb ---
     if apply_dereverb:
         y_target = apply_light_dereverb(y_target, sr)
+
+    # --- Optional Light Declick ---
+    if apply_declick:
+        y_target = apply_light_declick(y_target, sr)
 
     # --- Optional Strip Silence ---
     if enable_strip_silence:
@@ -466,6 +471,8 @@ apply_dereverb = st.checkbox("🏠 Apply light de-reverb (beta)", value=True)
 
 enable_strip_silence = st.checkbox("✂️ Strip silence (beta)", value=True)
 
+apply_declick = st.checkbox("👄 Light declick (experimental)", value=False)
+
 
 def apply_adaptive_hpf(y, sr):
     import numpy as np
@@ -619,6 +626,38 @@ def apply_light_dereverb(y, sr):
     return y_out
 
 
+def apply_light_declick(y, sr):
+    import numpy as np
+
+    y_out = y.copy()
+
+    click_threshold = 4.0
+    window_ms = 2
+
+    window = int(sr * window_ms / 1000)
+
+    abs_y = np.abs(y)
+
+    local_energy = np.convolve(abs_y, np.ones(window * 4) / (window * 4), mode="same")
+
+    candidates = np.where(abs_y > local_energy * click_threshold)[0]
+
+    for idx in candidates:
+
+        start = max(0, idx - window)
+        end = min(len(y_out), idx + window)
+
+        if end - start < 3:
+            continue
+
+        left = y_out[start]
+        right = y_out[end - 1]
+
+        y_out[start:end] = np.linspace(left, right, end - start)
+
+    return y_out
+
+
 def apply_strip_silence(
     y,
     sr,
@@ -726,6 +765,7 @@ if ref_upload and target_upload:
                     apply_dereverb=apply_dereverb,
                     enable_strip_silence=enable_strip_silence,
                     apply_lowend_cleanup=apply_lowend_cleanup,
+                    apply_declick=apply_declick,
                 )
 
                 output_fn = "leveled_target_vocal.wav"
