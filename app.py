@@ -82,7 +82,7 @@ def analyze_and_match_vocal(
 
     # --- Adaptive HPF ---
     if apply_lowend_cleanup:
-        y_target = apply
+        y_target = apply_adaptive_hpf(y_target, sr)
 
     # --- Optional Light Denoise ---
     if apply_denoise:
@@ -456,13 +456,13 @@ target_upload = st.file_uploader(
 st.write("---")
 st.subheader("🚀 Automatic Processing")
 
-apply_tonal = st.checkbox("🎛 Apply tonal matching (beta)")
+apply_tonal = st.checkbox("🎛 Apply tonal matching (beta)", value=True)
 
 apply_lowend_cleanup = st.checkbox("🎧 Apply low-end cleanup", value=True)
 
-apply_denoise = st.checkbox("🧹 Apply light denoise (beta)")
+apply_denoise = st.checkbox("🧹 Apply light denoise (beta)", value=True)
 
-apply_dereverb = st.checkbox("🏠 Apply light de-reverb (beta)")
+apply_dereverb = st.checkbox("🏠 Apply light de-reverb (beta)", value=True)
 
 enable_strip_silence = st.checkbox("✂️ Strip silence (beta)")
 
