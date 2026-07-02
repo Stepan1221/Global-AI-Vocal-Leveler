@@ -52,6 +52,7 @@ def analyze_and_match_vocal(
     apply_denoise=False,
     apply_dereverb=False,
     enable_strip_silence=False,
+    apply_lowend_cleanup=True,
 ):
 
     # 1. Load Audio Files
@@ -80,7 +81,8 @@ def analyze_and_match_vocal(
     y_target = y_target * pre_gain
 
     # --- Adaptive HPF ---
-    y_target = apply_adaptive_hpf(y_target, sr)
+    if apply_lowend_cleanup:
+        y_target = apply
 
     # --- Optional Light Denoise ---
     if apply_denoise:
@@ -456,6 +458,8 @@ st.subheader("🚀 Automatic Processing")
 
 apply_tonal = st.checkbox("🎛 Apply tonal matching (beta)")
 
+apply_lowend_cleanup = st.checkbox("🎧 Apply low-end cleanup", value=True)
+
 apply_denoise = st.checkbox("🧹 Apply light denoise (beta)")
 
 apply_dereverb = st.checkbox("🏠 Apply light de-reverb (beta)")
@@ -721,6 +725,7 @@ if ref_upload and target_upload:
                     apply_denoise=apply_denoise,
                     apply_dereverb=apply_dereverb,
                     enable_strip_silence=enable_strip_silence,
+                    apply_lowend_cleanup=apply_lowend_cleanup,
                 )
 
                 output_fn = "leveled_target_vocal.wav"
