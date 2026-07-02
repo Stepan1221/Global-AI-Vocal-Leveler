@@ -618,8 +618,8 @@ def apply_light_dereverb(y, sr):
 def apply_strip_silence(
     y,
     sr,
-    silence_threshold_db=-55,
-    min_silence_ms=80,
+    silence_threshold_db=-60,
+    min_silence_ms=60,
     fade_ms=15,
 ):
     import numpy as np
