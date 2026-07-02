@@ -571,9 +571,9 @@ def apply_light_denoise(y, sr):
     weights = np.ones_like(freqs)
 
     weights[freqs < 200] = 0.10
-    weights[(freqs >= 200) & (freqs < 1000)] = 0.50
-    weights[(freqs >= 1000) & (freqs < 4000)] = 1.00
-    weights[freqs >= 4000] = 1.20
+    weights[(freqs >= 200) & (freqs < 1000)] = 0.40
+    weights[(freqs >= 1000) & (freqs < 4000)] = 0.85
+    weights[freqs >= 4000] = 1.00
 
     # --- adaptive strength by loudness ---
     frame_strength = 1 - (frame_energy / (np.max(frame_energy) + 1e-9))
@@ -634,7 +634,7 @@ def apply_light_declick(y, sr):
     smoothed = medfilt(y, kernel_size=3)
 
     # pouze lehké přimíchání
-    blend = 0.08
+    blend = 0.15
 
     y_out = ((1 - blend) * y) + (blend * smoothed)
 
