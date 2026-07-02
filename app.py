@@ -51,7 +51,7 @@ def analyze_and_match_vocal(
     apply_tonal=False,
     apply_denoise=False,
     apply_dereverb=False,
-    apply_strip_silence=False,
+    enable_strip_silence=False,
 ):
 
     # 1. Load Audio Files
@@ -91,7 +91,7 @@ def analyze_and_match_vocal(
         y_target = apply_light_dereverb(y_target, sr)
 
     # --- Optional Strip Silence ---
-    if apply_strip_silence:
+    if enable_strip_silence:
         y_target = apply_strip_silence(
             y_target,
             sr,
@@ -720,7 +720,7 @@ if ref_upload and target_upload:
                     apply_tonal=apply_tonal,
                     apply_denoise=apply_denoise,
                     apply_dereverb=apply_dereverb,
-                    apply_strip_silence=enable_strip_silence,
+                    enable_strip_silence=enable_strip_silence,
                 )
 
                 output_fn = "leveled_target_vocal.wav"
