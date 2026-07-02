@@ -51,6 +51,7 @@ def analyze_and_match_vocal(
     apply_tonal=False,
     apply_denoise=False,
     apply_dereverb=False,
+    apply_strip_silence=False,
 ):
 
     # 1. Load Audio Files
@@ -88,6 +89,16 @@ def analyze_and_match_vocal(
     # --- Optional Light De-reverb ---
     if apply_dereverb:
         y_target = apply_light_dereverb(y_target, sr)
+
+    # --- Optional Strip Silence ---
+    if apply_strip_silence:
+        y_target = apply_strip_silence(
+            y_target,
+            sr,
+            silence_threshold_db=-55,
+            min_silence_ms=80,
+            fade_ms=15,
+        )
 
     # --- Fixed HPF 50 Hz ---
     # y_target = apply_fixed_hpf(y_target, sr, cutoff=50)
@@ -449,6 +460,8 @@ apply_denoise = st.checkbox("🧹 Apply light denoise (beta)")
 
 apply_dereverb = st.checkbox("🏠 Apply light de-reverb (beta)")
 
+apply_strip_silence = st.checkbox("✂️ Strip silence (beta)")
+
 
 def apply_adaptive_hpf(y, sr):
     import numpy as np
@@ -602,6 +615,58 @@ def apply_light_dereverb(y, sr):
     return y_out
 
 
+def apply_strip_silence(
+    y,
+    sr,
+    silence_threshold_db=-55,
+    min_silence_ms=80,
+    fade_ms=15,
+):
+    import numpy as np
+
+    threshold = 10 ** (silence_threshold_db / 20)
+
+    silence_mask = np.abs(y) < threshold
+
+    min_samples = int(sr * min_silence_ms / 1000)
+    fade_samples = int(sr * fade_ms / 1000)
+
+    y_out = y.copy()
+
+    start = None
+
+    for i, is_silent in enumerate(silence_mask):
+        if is_silent and start is None:
+            start = i
+
+        elif not is_silent and start is not None:
+
+            length = i - start
+
+            if length >= min_samples:
+
+                end = i
+
+                fade_len = min(fade_samples, length // 2)
+
+                # celé ticho na nulu
+                y_out[start:end] = 0
+
+                # fade out
+                fade_out = np.linspace(1, 0, fade_len)
+
+                y_out[start : start + fade_len] = y[start : start + fade_len] * fade_out
+
+                # fade in
+                fade_in = np.linspace(0, 1, fade_len)
+
+                y_out[end - fade_len : end] = y[end - fade_len : end] * fade_in
+
+            start = None
+
+    return y_out
+
+
 st.info("💡 Upload files and click process.")
 
 if ref_upload and target_upload:
@@ -629,6 +694,7 @@ if ref_upload and target_upload:
                     apply_tonal=apply_tonal,
                     apply_denoise=apply_denoise,
                     apply_dereverb=apply_dereverb,
+                    apply_strip_silence=apply_strip_silence,
                 )
 
                 output_fn = "leveled_target_vocal.wav"
