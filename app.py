@@ -85,6 +85,9 @@ def analyze_and_match_vocal(
     if apply_lowend_cleanup:
         y_target = apply_adaptive_hpf(y_target, sr)
 
+        # --- Subsonic Cleanup ---
+        y_target = apply_subsonic_cleanup(y_target, sr)
+
     # --- Optional Light Denoise ---
     if apply_denoise:
         y_target = apply_light_denoise(y_target, sr)
@@ -531,16 +534,35 @@ def apply_adaptive_hpf(y, sr):
 from scipy.signal import butter, filtfilt
 
 
-def apply_fixed_hpf(y, sr, cutoff=50):
-    nyquist = 0.5 * sr
-    norm_cutoff = cutoff / nyquist
+def apply_subsonic_cleanup(y, sr):
+    import numpy as np
+    import librosa
 
-    # 4th order → cca ~24 dB/oct → můžeme aplikovat 2x pro větší strmost
-    b, a = butter(4, norm_cutoff, btype="highpass")
+    n_fft = 4096
+    hop_length = 512
 
-    y_filtered = filtfilt(b, a, y)
+    stft = librosa.stft(y, n_fft=n_fft, hop_length=hop_length)
 
-    return y_filtered
+    mag = np.abs(stft)
+    phase = np.angle(stft)
+
+    freqs = librosa.fft_frequencies(sr=sr, n_fft=n_fft)
+
+    mask = np.ones_like(freqs)
+
+    # úplné ticho pod 40 Hz
+    mask[freqs < 40] = 0
+
+    # plynulý přechod 40-60 Hz
+    transition = (freqs >= 40) & (freqs <= 60)
+
+    mask[transition] = (freqs[transition] - 40) / 20
+
+    mag *= mask[:, np.newaxis]
+
+    y_out = librosa.istft(mag * np.exp(1j * phase), hop_length=hop_length)
+
+    return y_out
 
 
 def apply_light_denoise(y, sr):
