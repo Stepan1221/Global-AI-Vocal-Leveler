@@ -95,7 +95,7 @@ def analyze_and_match_vocal(
         y_target = apply_strip_silence(
             y_target,
             sr,
-            silence_threshold_db=-55,
+            silence_threshold_db=-60,
             min_silence_ms=80,
             fade_ms=15,
         )
