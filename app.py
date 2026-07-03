@@ -418,7 +418,7 @@ def apply_tonal_matching(y_ref, y_target, sr):
     ref_avg = np.mean(ref_stft, axis=1)
     target_avg = np.mean(target_stft, axis=1) + 1e-9
 
-    # ---- EQ difference ----
+    # ---- EQ difference (linear) ----
     eq_curve = ref_avg / target_avg
 
     # ---- smooth EQ curve ----
@@ -427,18 +427,8 @@ def apply_tonal_matching(y_ref, y_target, sr):
     # ---- limit extreme EQ ----
     eq_curve = np.clip(eq_curve, 0.5, 2.0)
 
-    # ---- measure spectrum difference ----
-    spectrum_difference = np.mean(np.abs(20 * np.log10(eq_curve)))
-
-    # ---- adaptive EQ strength ----
-    if spectrum_difference < 2.0:
-        eq_strength = 0.40
-
-    elif spectrum_difference < 4.0:
-        eq_strength = 0.55
-
-    else:
-        eq_strength = 0.70
+    # ---- apply with blend ----
+    eq_strength = 0.7
 
     target_stft_complex = librosa.stft(y_target, n_fft=n_fft)
 
@@ -446,7 +436,7 @@ def apply_tonal_matching(y_ref, y_target, sr):
     phase = np.angle(target_stft_complex)
 
     # ---- blend ----
-    eq_curve = (1 - eq_strength) + (eq_strength * eq_curve)
+    eq_curve = (1 - eq_strength) + eq_strength * eq_curve
 
     # ---- apply frequency shaping ----
     mag_matched = mag * eq_curve[:, np.newaxis]
@@ -455,54 +445,14 @@ def apply_tonal_matching(y_ref, y_target, sr):
     y_out = librosa.istft(mag_matched * np.exp(1j * phase))
 
     return y_out
-    import numpy as np
-    import librosa
-    from scipy.ndimage import gaussian_filter1d
-
-    # ---- STFT ----
-    n_fft = 2048
-
-    ref_stft = np.abs(librosa.stft(y_ref, n_fft=n_fft))
-    target_stft = np.abs(librosa.stft(y_target, n_fft=n_fft))
-
-    # ---- average spectrum ----
-    ref_avg = np.mean(ref_stft, axis=1)
-    target_avg = np.mean(target_stft, axis=1) + 1e-9
-
-    # ---- EQ difference (linear) ----
-    eq_curve = ref_avg / target_avg
-
-    # ---- smooth EQ curve ----
-    eq_curve = gaussian_filter1d(eq_curve, sigma=2)
-
-    # ---- limit extreme EQ ----
-    eq_curve = np.clip(eq_curve, 0.5, 2.0)
-
-    # ---- apply with blend ----
-    eq_strength = 0.7  # začni konzervativně
-
-    target_stft_complex = librosa.stft(y_target, n_fft=n_fft)
-    mag = np.abs(target_stft_complex)
-    phase = np.angle(target_stft_complex)
-
-    # blend
-    eq_curve = (1 - eq_strength) + eq_strength * eq_curve
-
-    # apply frequency shaping
-    mag_matched = mag * eq_curve[:, np.newaxis]
-
-    # reconstruct
-    y_out = librosa.istft(mag_matched * np.exp(1j * phase))
-
-    return y_out
 
 
 # --- WEB INTERFACE ---
-st.set_page_config(page_title="AI Vocal Leveler", page_icon="🎤", layout="centered")
-st.title("🎤 AI Vocal Leveler")
-st.subheader("Automated Volume Dynamics Matching")
+st.set_page_config(page_title="Vocal Match Engine", page_icon="🎤", layout="centered")
+st.title("🎤 Vocal Match Engine")
+st.subheader("Reference-Based Vocal Processing")
 st.write(
-    "Upload the reference track and your target language track to automatically match the volume dynamics."
+    "Upload a reference vocal and a target vocal to automatically match dynamics, tone, loudness and overall vocal character."
 )
 
 ref_upload = st.file_uploader(
@@ -525,7 +475,7 @@ apply_dereverb = st.checkbox("🏠 Apply light de-reverb (beta)", value=True)
 
 enable_strip_silence = st.checkbox("✂️ Strip silence (beta)", value=True)
 
-apply_declick = st.checkbox("👄 Light declick (experimental)", value=False)
+apply_declick = st.checkbox("👄 Light declick (experimental)", value=True)
 
 
 def apply_adaptive_hpf(y, sr):
