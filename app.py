@@ -114,8 +114,6 @@ def analyze_and_match_vocal(
     # y_target = apply_fixed_hpf(y_target, sr, cutoff=50)
 
     max_len = max(len(y_ref), len(y_target))
-
-    max_len = max(len(y_ref), len(y_target))
     y_ref = librosa.util.fix_length(y_ref, size=max_len)
     y_target = librosa.util.fix_length(y_target, size=max_len)
 
@@ -549,9 +547,6 @@ def apply_adaptive_hpf(y, sr):
     del stft, mag, phase, mask, mag_filtered
 
     return y_out
-
-
-from scipy.signal import butter, filtfilt
 
 
 def apply_subsonic_cleanup(y, sr):
