@@ -322,7 +322,7 @@ def analyze_and_match_vocal(
 
     # --- Frame-based Selective Micro-Peak Leveling (SAFE) ---
 
-    target_peak = np.max(np.abs(y_ref)) * 0.92
+    target_peak = np.max(np.abs(y_ref)) * 0.97
 
     frame_peaks = np.array(
         [
@@ -346,7 +346,46 @@ def analyze_and_match_vocal(
     if apply_tonal:
         y_modulated = apply_tonal_matching(y_ref, y_modulated, sr)
 
-    # --- Final Loudness Rebalance (after tonal) ---
+    # -------------------------------------------------
+    # FINAL LRA REBALANCE
+    # -------------------------------------------------
+
+    # meter = pyln.Meter(sr)
+
+    # lra_ref = meter.loudness_range(y_ref.astype("float32"))
+    # lra_out = meter.loudness_range(y_modulated.astype("float32"))
+
+    # if np.isfinite(lra_ref) and np.isfinite(lra_out) and lra_ref > 0 and lra_out > 0:
+
+    #     lra_ratio = lra_ref / lra_out
+
+    #     correction = np.clip(
+    #         lra_ratio,
+    #         0.80,
+    #         1.20,
+    #     )
+
+    #     gain_center = np.mean(gain_curve)
+
+    #     gain_curve_lra = gain_center + ((gain_curve - gain_center) * correction)
+
+    #     gain_curve_lra = np.maximum(
+    #         gain_curve_lra,
+    #         0.01,
+    #     )
+
+    #     gain_samples_lra = np.interp(
+    #         np.arange(len(y_modulated)),
+    #         np.arange(len(gain_curve_lra)) * hop_length,
+    #         gain_curve_lra,
+    #     )
+
+    #     y_modulated *= gain_samples_lra
+
+    # -------------------------------------------------
+    # FINAL LUFS REBALANCE
+    # -------------------------------------------------
+
     meter = pyln.Meter(sr)
 
     lufs_ref = meter.integrated_loudness(y_ref.astype("float32"))
@@ -359,8 +398,11 @@ def analyze_and_match_vocal(
 
     y_modulated *= rebalance_gain
 
-    # --- Final Peak Control (after tonal) ---
-    target_peak = np.max(np.abs(y_ref)) * 0.92
+    # -------------------------------------------------
+    # FINAL PEAK CONTROL
+    # -------------------------------------------------
+
+    target_peak = np.max(np.abs(y_ref)) * 0.99
 
     frame_peaks = np.array(
         [
@@ -369,8 +411,16 @@ def analyze_and_match_vocal(
         ]
     )
 
-    gain_reduction = np.clip(target_peak / (frame_peaks + 1e-9), 0.60, 1.0)
-    gain_reduction = gaussian_filter1d(gain_reduction, sigma=3)
+    gain_reduction = np.clip(
+        target_peak / (frame_peaks + 1e-9),
+        0.60,
+        1.0,
+    )
+
+    gain_reduction = gaussian_filter1d(
+        gain_reduction,
+        sigma=3,
+    )
 
     gain_samples = np.interp(
         np.arange(len(y_modulated)),
@@ -381,6 +431,8 @@ def analyze_and_match_vocal(
     y_modulated *= gain_samples
 
     times = librosa.times_like(rms_ref_macro, sr=sr, hop_length=hop_length)
+
+    meter = pyln.Meter(sr)
 
     metrics_ref = calculate_r128_metrics(y_ref, sr)
     metrics_target = calculate_r128_metrics(y_target, sr)
@@ -398,6 +450,8 @@ def analyze_and_match_vocal(
         metrics_ref,
         metrics_target,
         metrics_out,
+        y_ref,
+        y_target,
     )
 
 
@@ -783,6 +837,8 @@ if ref_upload and target_upload:
                     m_ref,
                     m_tgt,
                     m_out,
+                    ref_audio,
+                    target_audio,
                 ) = analyze_and_match_vocal(
                     ref_upload,
                     target_upload,
@@ -834,7 +890,17 @@ if ref_upload and target_upload:
                 st.table(df)
 
                 # PLOT GRAPH
-                fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+
+                fig, (
+                    ax1,
+                    ax2,
+                ) = plt.subplots(
+                    2,
+                    1,
+                    figsize=(10, 6),
+                    sharex=False,
+                )
+
                 fig.patch.set_facecolor("#0e1117")
 
                 ax1.set_facecolor("#131722")
