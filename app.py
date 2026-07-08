@@ -574,7 +574,7 @@ def apply_adaptive_hpf(y, sr):
         fundamental_freqs[t] = freqs[idx]
 
     # --- stabilizace ---
-    fundamental_freqs = np.clip(fundamental_freqs, 70, 250)
+    fundamental_freqs = np.clip(fundamental_freqs, 50, 250)
 
     # --- smoothing ---
     fundamental_freqs = gaussian_filter1d(fundamental_freqs, sigma=10)
@@ -619,13 +619,13 @@ def apply_subsonic_cleanup(y, sr):
 
     mask = np.ones_like(freqs)
 
-    # úplné ticho pod 40 Hz
-    mask[freqs < 40] = 0
+    # úplné ticho pod 30 Hz
+    mask[freqs < 30] = 0
 
-    # plynulý přechod 40-60 Hz
-    transition = (freqs >= 40) & (freqs <= 60)
+    # plynulý přechod 30-50 Hz
+    transition = (freqs >= 30) & (freqs <= 50)
 
-    mask[transition] = (freqs[transition] - 40) / 20
+    mask[transition] = (freqs[transition] - 30) / 20
 
     mag *= mask[:, np.newaxis]
 
