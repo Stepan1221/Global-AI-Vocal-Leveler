@@ -713,7 +713,7 @@ def apply_light_dereverb(y, sr):
     # dlouhodobá energie = odhad room tailu
     reverb_estimate = gaussian_filter1d(mag, sigma=8, axis=1)
 
-    dereverb_strength = 0.10
+    dereverb_strength = 0.12
 
     mag_clean = mag - (reverb_estimate * dereverb_strength)
     mag_clean = np.maximum(mag_clean, 0)
@@ -731,10 +731,10 @@ def apply_light_declick(y, sr):
     import numpy as np
 
     # velmi jemný globální declick
-    smoothed = medfilt(y, kernel_size=3)
+    smoothed = medfilt(y, kernel_size=5)
 
-    # pouze lehké přimíchání
-    blend = 0.15
+    # lehké přimíchání
+    blend = 0.25
 
     y_out = ((1 - blend) * y) + (blend * smoothed)
 
