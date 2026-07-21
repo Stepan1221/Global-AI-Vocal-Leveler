@@ -69,3 +69,11 @@ def has_working_audio():
 def has_reference_audio():
 
     return st.session_state["reference_audio"] is not None
+
+
+def get_source_audio(source_mode):
+
+    if source_mode == "Original Audio":
+        return get_original_audio()
+
+    return get_working_audio()
