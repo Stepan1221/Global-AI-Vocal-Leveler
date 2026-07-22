@@ -259,7 +259,7 @@ st.subheader("🎧 Compare")
 st.caption("Listen To")
 
 compare_dynamic_mode = st.radio(
-    "",
+    "Listen To",
     [
         "Original Audio",
         "Dynamic Match Preview",
@@ -383,7 +383,7 @@ st.subheader("🎧 Compare")
 st.caption("Listen To")
 
 compare_tonal_mode = st.radio(
-    "",
+    "Listen To",
     [
         "Original Audio",
         "Tonal Match Preview",
@@ -640,7 +640,7 @@ st.subheader("🎧 Compare")
 st.caption("Listen To")
 
 compare_cleanup_mode = st.radio(
-    "",
+    "Listen To",
     [
         "Original Audio",
         "Cleanup Preview",
