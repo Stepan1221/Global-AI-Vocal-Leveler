@@ -699,3 +699,28 @@ if accept_cleanup_preview:
         st.success("Working audio updated from the cleanup preview.")
     else:
         st.warning("No cleanup preview is available to accept yet.")
+
+st.divider()
+
+st.header("💾 Export Workspace Audio")
+
+current_working_audio = get_working_audio()
+current_sr = get_sample_rate()
+
+if current_working_audio is not None:
+
+    export_wav_bytes = _audio_to_wav_bytes_data(
+        current_working_audio,
+        current_sr,
+    )
+
+    st.download_button(
+        label="⬇ Export WAV",
+        data=export_wav_bytes,
+        file_name="workspace_export.wav",
+        mime="audio/wav",
+        key="workspace_export_wav",
+    )
+
+else:
+    st.info("No working audio is available to export.")
