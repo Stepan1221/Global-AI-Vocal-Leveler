@@ -235,17 +235,38 @@ if run_dynamic:
                 st.error(f"Dynamic Match failed: {exc}")
 
 # ----------------------------------
-# Preview Playback & Download
+# Dynamic Match Compare Section
 # ----------------------------------
 
-if st.session_state.get("preview_audio") is not None:
-    _render_preview_section(
-        st.session_state["preview_audio"],
-        st.session_state.get("preview_sample_rate") or get_sample_rate(),
-        "🎧 Preview",
-        "download_dynamic_preview_wav",
-        "dynamic_preview.wav",
-    )
+st.subheader("🎧 Compare")
+st.caption("Listen To")
+
+compare_dynamic_mode = st.radio(
+    "",
+    [
+        "Original Audio",
+        "Dynamic Match Preview",
+        "Current Working Audio",
+    ],
+    key="dynamic_compare_mode",
+    horizontal=True,
+)
+
+# Select the single audio source for the compare player so the UI remains simple.
+if compare_dynamic_mode == "Original Audio":
+    compare_audio = get_original_audio()
+    compare_sr = get_sample_rate()
+elif compare_dynamic_mode == "Dynamic Match Preview":
+    compare_audio = st.session_state.get("preview_audio")
+    compare_sr = st.session_state.get("preview_sample_rate") or get_sample_rate()
+else:
+    compare_audio = get_working_audio()
+    compare_sr = get_sample_rate()
+
+if compare_audio is not None:
+    st.audio(_audio_to_wav_bytes_data(compare_audio, compare_sr), format="audio/wav")
+else:
+    st.info("No audio is available for the selected compare option yet.")
 
 if accept_dynamic_preview:
     if st.session_state.get("preview_audio") is not None:
@@ -309,14 +330,39 @@ if run_tonal:
             except Exception as exc:
                 st.error(f"Tonal Match failed: {exc}")
 
-if st.session_state.get("tonal_preview_audio") is not None:
-    _render_preview_section(
-        st.session_state["tonal_preview_audio"],
-        st.session_state.get("tonal_preview_sample_rate") or get_sample_rate(),
-        "🎧 Tonal Preview",
-        "download_tonal_preview_wav",
-        "tonal_preview.wav",
-    )
+# ----------------------------------
+# Tonal Match Compare Section
+# ----------------------------------
+
+st.subheader("🎧 Compare")
+st.caption("Listen To")
+
+compare_tonal_mode = st.radio(
+    "",
+    [
+        "Original Audio",
+        "Tonal Match Preview",
+        "Current Working Audio",
+    ],
+    key="tonal_compare_mode",
+    horizontal=True,
+)
+
+# Select the single audio source for the compare player so the UI remains simple.
+if compare_tonal_mode == "Original Audio":
+    compare_audio = get_original_audio()
+    compare_sr = get_sample_rate()
+elif compare_tonal_mode == "Tonal Match Preview":
+    compare_audio = st.session_state.get("tonal_preview_audio")
+    compare_sr = st.session_state.get("tonal_preview_sample_rate") or get_sample_rate()
+else:
+    compare_audio = get_working_audio()
+    compare_sr = get_sample_rate()
+
+if compare_audio is not None:
+    st.audio(_audio_to_wav_bytes_data(compare_audio, compare_sr), format="audio/wav")
+else:
+    st.info("No audio is available for the selected compare option yet.")
 
 if accept_tonal_preview:
     if st.session_state.get("tonal_preview_audio") is not None:
