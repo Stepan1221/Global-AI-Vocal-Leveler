@@ -21,6 +21,7 @@ from core.audio_state import (
 )
 
 from engine.dynamic_match import analyze_and_match_vocal
+from engine.tonal_match import apply_tonal_matching
 
 init_audio_state()
 
@@ -29,6 +30,12 @@ if "preview_audio" not in st.session_state:
 
 if "preview_sample_rate" not in st.session_state:
     st.session_state["preview_sample_rate"] = None
+
+if "tonal_preview_audio" not in st.session_state:
+    st.session_state["tonal_preview_audio"] = None
+
+if "tonal_preview_sample_rate" not in st.session_state:
+    st.session_state["tonal_preview_sample_rate"] = None
 
 
 def _audio_to_wav_bytes(audio, sample_rate):
@@ -43,6 +50,25 @@ def _audio_to_wav_bytes_data(audio, sample_rate):
     """Return WAV audio as raw bytes for playback and file download."""
     preview_buffer = _audio_to_wav_bytes(audio, sample_rate)
     return preview_buffer.getvalue()
+
+
+def _render_preview_section(audio, sample_rate, title, download_key, file_name):
+    """Render a reusable preview player and download control for workspace modules."""
+    if audio is None:
+        return
+
+    st.subheader(title)
+
+    preview_wav_bytes = _audio_to_wav_bytes_data(audio, sample_rate)
+    st.audio(preview_wav_bytes, format="audio/wav")
+
+    st.download_button(
+        label="⬇ Download Preview",
+        data=preview_wav_bytes,
+        file_name=file_name,
+        mime="audio/wav",
+        key=download_key,
+    )
 
 
 st.title("🛠 Workspace")
@@ -150,7 +176,7 @@ run_dynamic = st.button(
     key="run_dynamic_match",
 )
 
-accept_preview = st.button(
+accept_dynamic_preview = st.button(
     "Accept",
     key="accept_dynamic_preview",
 )
@@ -213,27 +239,88 @@ if run_dynamic:
 # ----------------------------------
 
 if st.session_state.get("preview_audio") is not None:
-    st.subheader("🎧 Preview")
-
-    preview_audio = st.session_state["preview_audio"]
-    preview_sr = st.session_state.get("preview_sample_rate") or get_sample_rate()
-
-    # Build WAV bytes once so the same preview can be played back and downloaded.
-    preview_wav_bytes = _audio_to_wav_bytes_data(preview_audio, preview_sr)
-
-    st.audio(preview_wav_bytes, format="audio/wav")
-
-    st.download_button(
-        label="⬇ Download Preview",
-        data=preview_wav_bytes,
-        file_name="preview.wav",
-        mime="audio/wav",
-        key="download_preview_wav",
+    _render_preview_section(
+        st.session_state["preview_audio"],
+        st.session_state.get("preview_sample_rate") or get_sample_rate(),
+        "🎧 Preview",
+        "download_dynamic_preview_wav",
+        "dynamic_preview.wav",
     )
 
-if accept_preview:
+if accept_dynamic_preview:
     if st.session_state.get("preview_audio") is not None:
         set_working_audio(st.session_state["preview_audio"])
-        st.success("Working audio updated from the preview.")
+        st.success("Working audio updated from the dynamic preview.")
     else:
-        st.warning("No preview is available to accept yet.")
+        st.warning("No dynamic preview is available to accept yet.")
+
+st.divider()
+
+st.header("🎛 Tonal Match")
+
+tonal_source_mode = st.radio(
+    "Source Audio",
+    [
+        "Current Working Audio",
+        "Original Audio",
+    ],
+    key="tonal_source",
+)
+
+run_tonal = st.button(
+    "Run Tonal Match",
+    key="run_tonal_match",
+)
+
+accept_tonal_preview = st.button(
+    "Accept",
+    key="accept_tonal_preview",
+)
+
+if run_tonal:
+    source_audio = get_source_audio(tonal_source_mode)
+    reference_audio = get_reference_audio()
+    current_sr = get_sample_rate()
+
+    if source_audio is None:
+        st.error("Please load a source audio before running Tonal Match.")
+    elif reference_audio is None:
+        st.error("Please load a reference audio before running Tonal Match.")
+    elif current_sr is None:
+        st.error("Please ensure the working audio has been loaded before processing.")
+    else:
+        with st.spinner("Running Tonal Match..."):
+            try:
+                # Run the existing tonal matching routine directly on the selected
+                # source and reference audio arrays without altering the DSP logic.
+                tonal_output = apply_tonal_matching(
+                    reference_audio, source_audio, current_sr
+                )
+
+                # Store the tonal preview separately so it can be played, downloaded,
+                # and accepted independently from the dynamic-match preview.
+                st.session_state["tonal_preview_audio"] = tonal_output
+                st.session_state["tonal_preview_sample_rate"] = current_sr
+
+                st.success("Preview Ready")
+                st.caption(
+                    "The tonal preview was generated without updating the working audio."
+                )
+            except Exception as exc:
+                st.error(f"Tonal Match failed: {exc}")
+
+if st.session_state.get("tonal_preview_audio") is not None:
+    _render_preview_section(
+        st.session_state["tonal_preview_audio"],
+        st.session_state.get("tonal_preview_sample_rate") or get_sample_rate(),
+        "🎧 Tonal Preview",
+        "download_tonal_preview_wav",
+        "tonal_preview.wav",
+    )
+
+if accept_tonal_preview:
+    if st.session_state.get("tonal_preview_audio") is not None:
+        set_working_audio(st.session_state["tonal_preview_audio"])
+        st.success("Working audio updated from the tonal preview.")
+    else:
+        st.warning("No tonal preview is available to accept yet.")
