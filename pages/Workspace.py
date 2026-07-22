@@ -256,7 +256,6 @@ if run_dynamic:
 # ----------------------------------
 
 st.subheader("🎧 Compare")
-st.caption("Listen To")
 
 compare_dynamic_mode = st.radio(
     "Listen To",
@@ -290,6 +289,7 @@ if st.session_state.get("preview_audio") is not None:
         st.session_state["preview_audio"],
         st.session_state.get("preview_sample_rate") or get_sample_rate(),
     )
+
     st.download_button(
         label="⬇ Download Preview",
         data=preview_wav_bytes,
@@ -298,13 +298,9 @@ if st.session_state.get("preview_audio") is not None:
         key="download_dynamic_preview_wav",
     )
 
-if accept_dynamic_preview:
-    if st.session_state.get("preview_audio") is not None:
+    if accept_dynamic_preview:
         set_working_audio(st.session_state["preview_audio"])
         st.success("Working audio updated from the dynamic preview.")
-    else:
-        st.warning("No dynamic preview is available to accept yet.")
-
 # ----------------------------------
 # Dynamic Match Analysis Panel
 # ----------------------------------
@@ -393,7 +389,6 @@ if run_tonal:
 # ----------------------------------
 
 st.subheader("🎧 Compare")
-st.caption("Listen To")
 
 compare_tonal_mode = st.radio(
     "Listen To",
@@ -417,16 +412,12 @@ else:
     compare_audio = get_working_audio()
     compare_sr = get_sample_rate()
 
-if compare_audio is not None:
-    st.audio(_audio_to_wav_bytes_data(compare_audio, compare_sr), format="audio/wav")
-else:
-    st.info("No audio is available for the selected compare option yet.")
-
 if st.session_state.get("tonal_preview_audio") is not None:
     preview_wav_bytes = _audio_to_wav_bytes_data(
         st.session_state["tonal_preview_audio"],
         st.session_state.get("tonal_preview_sample_rate") or get_sample_rate(),
     )
+
     st.download_button(
         label="⬇ Download Preview",
         data=preview_wav_bytes,
@@ -435,12 +426,9 @@ if st.session_state.get("tonal_preview_audio") is not None:
         key="download_tonal_preview_wav",
     )
 
-if accept_tonal_preview:
-    if st.session_state.get("tonal_preview_audio") is not None:
+    if accept_tonal_preview:
         set_working_audio(st.session_state["tonal_preview_audio"])
         st.success("Working audio updated from the tonal preview.")
-    else:
-        st.warning("No tonal preview is available to accept yet.")
 
 # ----------------------------------
 # Tonal Match Analysis Panel
@@ -595,7 +583,7 @@ cleanup_options = st.checkbox(
 
 cleanup_denoise = st.checkbox("Denoise", value=False, key="cleanup_denoise")
 cleanup_dereverb = st.checkbox("Dereverb", value=False, key="cleanup_dereverb")
-cleanup_declick = st.checkbox("Declick", value=False, key="cleanup_declick")
+# cleanup_declick = st.checkbox("Declick", value=False, key="cleanup_declick")
 cleanup_strip_silence = st.checkbox(
     "Strip Silence",
     value=False,
@@ -637,8 +625,11 @@ if run_cleanup:
                 if cleanup_dereverb:
                     cleaned_audio = apply_light_dereverb(cleaned_audio, current_sr)
 
-                if cleanup_declick:
-                    cleaned_audio = apply_light_declick(cleaned_audio, current_sr)
+                # Temporarily disabled.
+                # Current implementation is too weak and requires redesign.
+
+                # if cleanup_declick:
+                #     cleaned_audio = apply_light_declick(cleaned_audio, current_sr)
 
                 if cleanup_strip_silence:
                     cleaned_audio = apply_strip_silence(cleaned_audio, current_sr)
@@ -653,17 +644,7 @@ if run_cleanup:
             except Exception as exc:
                 st.error(f"Cleanup failed: {exc}")
 
-if st.session_state.get("cleanup_preview_audio") is not None:
-    _render_preview_section(
-        st.session_state["cleanup_preview_audio"],
-        st.session_state.get("cleanup_preview_sample_rate") or get_sample_rate(),
-        "⬇ Download Preview",
-        "download_cleanup_preview_wav",
-        "cleanup_preview.wav",
-    )
-
 st.subheader("🎧 Compare")
-st.caption("Listen To")
 
 compare_cleanup_mode = st.radio(
     "Listen To",
@@ -690,9 +671,28 @@ else:
     compare_sr = get_sample_rate()
 
 if compare_audio is not None:
-    st.audio(_audio_to_wav_bytes_data(compare_audio, compare_sr), format="audio/wav")
+    st.audio(
+        _audio_to_wav_bytes_data(compare_audio, compare_sr),
+        format="audio/wav",
+    )
 else:
     st.info("No audio is available for the selected compare option yet.")
+
+if st.session_state.get("cleanup_preview_audio") is not None:
+
+    preview_wav_bytes = _audio_to_wav_bytes_data(
+        st.session_state["cleanup_preview_audio"],
+        st.session_state.get("cleanup_preview_sample_rate") or get_sample_rate(),
+    )
+
+    st.download_button(
+        label="⬇ Download Preview",
+        data=preview_wav_bytes,
+        file_name="cleanup_preview.wav",
+        mime="audio/wav",
+        key="download_cleanup_preview_wav",
+    )
+
 if accept_cleanup_preview:
     if st.session_state.get("cleanup_preview_audio") is not None:
         set_working_audio(st.session_state["cleanup_preview_audio"])

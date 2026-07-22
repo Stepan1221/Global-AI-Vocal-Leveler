@@ -29,7 +29,7 @@ def apply_tonal_matching(y_ref, y_target, sr):
     eq_curve = np.clip(eq_curve, 0.5, 2.0)
 
     # ---- apply with blend ----
-    eq_strength = 0.7
+    eq_strength = 0.8
 
     # Reuse already-computed complex STFT (no redundant computation)
     mag = np.abs(target_stft_complex)

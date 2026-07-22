@@ -91,54 +91,66 @@ def apply_light_denoise(y, sr):
     n_fft = 2048
     hop_length = 512
 
-    stft = librosa.stft(y, n_fft=n_fft, hop_length=hop_length)
+    stft = librosa.stft(
+        y,
+        n_fft=n_fft,
+        hop_length=hop_length,
+    )
 
     mag = np.abs(stft)
     phase = np.angle(stft)
 
-    # --- noise profile ---
+    # Najdi nejtišší rámce
     frame_energy = np.mean(mag, axis=0)
-    noise_frames = frame_energy <= np.percentile(frame_energy, 10)
 
-    if np.any(noise_frames):
-        noise_profile = np.median(mag[:, noise_frames], axis=1)
-    else:
-        noise_profile = np.zeros(mag.shape[0])
-
-    # --- frequency weighting ---
-    freqs = librosa.fft_frequencies(sr=sr, n_fft=n_fft)
-
-    weights = np.ones_like(freqs)
-
-    weights[freqs < 200] = 0.10
-    weights[(freqs >= 200) & (freqs < 1000)] = 0.40
-    weights[(freqs >= 1000) & (freqs < 4000)] = 0.85
-    weights[freqs >= 4000] = 1.00
-
-    # --- adaptive strength by loudness ---
-    frame_strength = 1 - (frame_energy / (np.max(frame_energy) + 1e-9))
-
-    frame_strength = np.clip(frame_strength, 0.1, 1.0)
-
-    denoise_strength = 0.25
-
-    reduction = (
-        noise_profile[:, np.newaxis]
-        * weights[:, np.newaxis]
-        * frame_strength[np.newaxis, :]
-        * denoise_strength
+    noise_frames = frame_energy <= np.percentile(
+        frame_energy,
+        30,
     )
 
-    mag_clean = mag - reduction
-    mag_clean = np.maximum(mag_clean, 0)
+    if np.any(noise_frames):
+        noise_profile = np.mean(
+            mag[:, noise_frames],
+            axis=1,
+        )
+    else:
+        noise_profile = np.percentile(
+            mag,
+            25,
+            axis=1,
+        )
 
-    # --- smoothing ---
-    mag_clean = gaussian_filter1d(mag_clean, sigma=1, axis=1)
+    print("Noise frames:", np.sum(noise_frames))
+    print("Noise profile max:", np.max(noise_profile))
+    print("Noise profile mean:", np.mean(noise_profile))
 
-    y_out = librosa.istft(mag_clean * np.exp(1j * phase), hop_length=hop_length)
+    # Síla redukce
+    reduction_strength = 1.3
 
-    # Memory cleanup: delete large spectral arrays and noise profile
-    del stft, mag, phase, noise_profile, reduction, mag_clean
+    mag_clean = mag - (noise_profile[:, np.newaxis] * reduction_strength)
+
+    mag_clean = np.maximum(
+        mag_clean,
+        mag * 0.05,
+    )
+
+    # Jemné vyhlazení
+    mag_clean = gaussian_filter1d(
+        mag_clean,
+        sigma=1,
+        axis=1,
+    )
+
+    y_out = librosa.istft(
+        mag_clean * np.exp(1j * phase),
+        hop_length=hop_length,
+    )
+
+    del stft
+    del mag
+    del phase
+    del noise_profile
+    del mag_clean
 
     return y_out
 
@@ -155,7 +167,7 @@ def apply_light_dereverb(y, sr):
     # dlouhodobá energie = odhad room tailu
     reverb_estimate = gaussian_filter1d(mag, sigma=8, axis=1)
 
-    dereverb_strength = 0.12
+    dereverb_strength = 0.15
 
     mag_clean = mag - (reverb_estimate * dereverb_strength)
     mag_clean = np.maximum(mag_clean, 0)
@@ -175,7 +187,7 @@ def apply_light_declick(y, sr):
     smoothed = medfilt(y, kernel_size=5)
 
     # lehké přimíchání
-    blend = 0.25
+    blend = 0.35
 
     y_out = ((1 - blend) * y) + (blend * smoothed)
 
