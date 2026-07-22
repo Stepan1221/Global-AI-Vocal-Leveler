@@ -285,6 +285,19 @@ if compare_audio is not None:
 else:
     st.info("No audio is available for the selected compare option yet.")
 
+if st.session_state.get("preview_audio") is not None:
+    preview_wav_bytes = _audio_to_wav_bytes_data(
+        st.session_state["preview_audio"],
+        st.session_state.get("preview_sample_rate") or get_sample_rate(),
+    )
+    st.download_button(
+        label="⬇ Download Preview",
+        data=preview_wav_bytes,
+        file_name="dynamic_preview.wav",
+        mime="audio/wav",
+        key="download_dynamic_preview_wav",
+    )
+
 if accept_dynamic_preview:
     if st.session_state.get("preview_audio") is not None:
         set_working_audio(st.session_state["preview_audio"])
@@ -408,6 +421,19 @@ if compare_audio is not None:
     st.audio(_audio_to_wav_bytes_data(compare_audio, compare_sr), format="audio/wav")
 else:
     st.info("No audio is available for the selected compare option yet.")
+
+if st.session_state.get("tonal_preview_audio") is not None:
+    preview_wav_bytes = _audio_to_wav_bytes_data(
+        st.session_state["tonal_preview_audio"],
+        st.session_state.get("tonal_preview_sample_rate") or get_sample_rate(),
+    )
+    st.download_button(
+        label="⬇ Download Preview",
+        data=preview_wav_bytes,
+        file_name="tonal_preview.wav",
+        mime="audio/wav",
+        key="download_tonal_preview_wav",
+    )
 
 if accept_tonal_preview:
     if st.session_state.get("tonal_preview_audio") is not None:
@@ -667,7 +693,6 @@ if compare_audio is not None:
     st.audio(_audio_to_wav_bytes_data(compare_audio, compare_sr), format="audio/wav")
 else:
     st.info("No audio is available for the selected compare option yet.")
-
 if accept_cleanup_preview:
     if st.session_state.get("cleanup_preview_audio") is not None:
         set_working_audio(st.session_state["cleanup_preview_audio"])
