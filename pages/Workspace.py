@@ -112,7 +112,7 @@ reference_upload = st.file_uploader(
 # Load Working Audio
 # ----------------------------------
 
-if working_upload:
+if working_upload and not has_original_audio():
 
     y, sr = librosa.load(
         working_upload,
@@ -601,6 +601,7 @@ accept_cleanup_preview = st.button(
 )
 
 if run_cleanup:
+    st.write("Cleanup source:", cleanup_source_mode)
     source_audio = get_source_audio(cleanup_source_mode)
     current_sr = get_sample_rate()
 
@@ -616,13 +617,16 @@ if run_cleanup:
                 cleaned_audio = source_audio
 
                 if cleanup_options:
+                    print("RUNNING LOW END")
                     cleaned_audio = apply_adaptive_hpf(cleaned_audio, current_sr)
                     cleaned_audio = apply_subsonic_cleanup(cleaned_audio, current_sr)
 
                 if cleanup_denoise:
+                    print("RUNNING DENOISE")
                     cleaned_audio = apply_light_denoise(cleaned_audio, current_sr)
 
                 if cleanup_dereverb:
+                    print("RUNNING DEREVERB")
                     cleaned_audio = apply_light_dereverb(cleaned_audio, current_sr)
 
                 # Temporarily disabled.
@@ -632,7 +636,11 @@ if run_cleanup:
                 #     cleaned_audio = apply_light_declick(cleaned_audio, current_sr)
 
                 if cleanup_strip_silence:
+                    print("RUNNING STRIP SILENCE")
                     cleaned_audio = apply_strip_silence(cleaned_audio, current_sr)
+
+                print("Preview samples:", len(cleaned_audio))
+                print("Preview peak:", np.max(np.abs(cleaned_audio)))
 
                 st.session_state["cleanup_preview_audio"] = cleaned_audio
                 st.session_state["cleanup_preview_sample_rate"] = current_sr
